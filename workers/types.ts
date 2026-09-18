@@ -5,4 +5,6 @@
 export interface Env extends Cloudflare.Env {
 	POLICY_AUD: string;
 	TEAM_DOMAIN: string;
+	/** Resend API key (required when EMAIL_PROVIDER is "resend"). */
+	RESEND_API_KEY?: string;
 }

@@ -1,0 +1,60 @@
+#:schema node_modules/wrangler/config-schema.json
+# Alternative deployment config: outbound email via Cloudflare Email Service
+# (send_email binding). Inbound email always uses Cloudflare Email Routing
+# (catch-all rule in the dashboard). Use it via:
+#   npm run deploy:cloudflare   (or: npm run dev:cloudflare)
+# Note: the react-router/cloudflare build reads this file through the
+# WRANGLER_CONFIG env var; plain `wrangler deploy --config` does not work
+# because deploys use the redirected config emitted into build/server.
+name = "agentic-inbox"
+compatibility_date = "2025-11-28"
+main = "./workers/app.ts"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[vars]
+# Production deploys must also define POLICY_AUD and TEAM_DOMAIN.
+# TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
+# The worker now fails closed outside local development if Access is not configured.
+DOMAINS = "example.com"
+EMAIL_ADDRESSES = []
+# Outbound email provider. This config uses the Cloudflare Email Service binding below.
+EMAIL_PROVIDER = "cloudflare"
+
+[[send_email]]
+name = "EMAIL"
+remote = true
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "agentic-inbox"
+preview_bucket_name = "agentic-inbox"
+
+[ai]
+binding = "AI"
+
+[[durable_objects.bindings]]
+name = "MAILBOX"
+class_name = "MailboxDO"
+
+[[durable_objects.bindings]]
+name = "EMAIL_AGENT"
+class_name = "EmailAgent"
+
+[[durable_objects.bindings]]
+name = "EMAIL_MCP"
+class_name = "EmailMCP"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MailboxDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["EmailAgent"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["EmailMCP"]

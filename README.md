@@ -25,7 +25,9 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
 2. **Configure Cloudflare Access** -- Enable [one-click Cloudflare Access](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/) on your Worker under Settings > Domains & Routes. The modal will show your `POLICY_AUD` and `TEAM_DOMAIN` values. `TEAM_DOMAIN` can be either your Access team URL or the full `.../cdn-cgi/access/certs` URL. **You must set these as secrets for your Worker.**
 3. **Set up Email Routing** -- In the Cloudflare dashboard, go to your domain > Email Routing and create a catch-all rule that forwards to this Worker
-4. **Enable Email Service** -- The worker needs the `send_email` binding to send outbound emails. See [Email Service docs](https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/)
+4. **Configure an email sending provider** -- Outbound email supports multiple providers. Each provider has its own wrangler config, and each deployment uses exactly one of them. Inbound email always uses Cloudflare Email Routing either way:
+   * **Resend (default)** -- Deploy with `wrangler.toml`. Add your API key as a secret: `wrangler secret put RESEND_API_KEY`. Make sure your sending domain is verified in [Resend](https://resend.com/domains).
+   * **Cloudflare Email Service (optional)** -- Deploy with `npm run deploy:cloudflare`, which builds against `wrangler.cloudflare.toml` (`EMAIL_PROVIDER=cloudflare` + the `send_email` binding). See [Email Service docs](https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/)
 5. **Create a mailbox** -- Visit your deployed app and create a mailbox for any address on your domain (e.g. `hello@example.com`)
 
 ### Troubleshooting Access
@@ -59,20 +61,25 @@ npm run dev
 
 ### Configuration
 
-1. Set your domain in `wrangler.jsonc`
+1. Set your domain in `wrangler.toml` (and `wrangler.cloudflare.toml` if you use it)
 2. Create an R2 bucket named `agentic-inbox`: `wrangler r2 bucket create agentic-inbox`
 
 ### Deploy
 
 ```bash
-npm run deploy
+npm run deploy              # Resend (default, wrangler.toml)
+npm run deploy:cloudflare   # Cloudflare Email Service (wrangler.cloudflare.toml)
 ```
+
+For local development against the Cloudflare Email Service provider, use `npm run dev:cloudflare`.
+
+Both configs share the same Worker name and resources; inbound email always arrives via Cloudflare Email Routing regardless of which provider config you deploy.
 
 ## Prerequisites
 
 - Cloudflare account with a domain
 - [Email Routing](https://developers.cloudflare.com/email-routing/) enabled for receiving
-- [Email Service](https://developers.cloudflare.com/email-service/) enabled for sending
+- An outbound email provider: [Resend](https://resend.com/) (default config, requires `RESEND_API_KEY`) or [Email Service](https://developers.cloudflare.com/email-service/) (`wrangler.cloudflare.toml`)
 - [Workers AI](https://developers.cloudflare.com/workers-ai/) enabled (for the agent)
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) configured for deployed/shared environments (required in production)
 

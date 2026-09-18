@@ -10,7 +10,13 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   plugins: [
-    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    // Select the wrangler config via WRANGLER_CONFIG (defaults to the
+    // Resend variant; set WRANGLER_CONFIG=wrangler.cloudflare.toml to
+    // develop against the Cloudflare Email Service provider).
+    cloudflare({
+      viteEnvironment: { name: "ssr" },
+      configPath: process.env.WRANGLER_CONFIG ?? "wrangler.toml",
+    }),
     tailwindcss(),
     reactRouter(),
     tsconfigPaths(),
