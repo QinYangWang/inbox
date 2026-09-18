@@ -16,6 +16,16 @@ export interface MailboxSettings {
 	agentSystemPrompt?: string;
 }
 
+export interface DomainConfig {
+	domain: string;
+	emailAddresses: string[];
+	inboundProvider: "cloudflare";
+	outboundProvider: "none" | "cloudflare" | "resend";
+	hasResendApiKey: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface Mailbox {
 	id: string;
 	email: string;

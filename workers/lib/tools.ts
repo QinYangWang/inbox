@@ -30,6 +30,7 @@ import { verifyDraft } from "./ai";
 import { sendEmail } from "../email-sender";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
+import { getOutboundConfig } from "../domain-config";
 
 // ── Type casts for DO methods not on the base stub type ────────────
 type MailboxSearchStub = {
@@ -440,7 +441,7 @@ export async function toolSendReply(
 			subject: params.subject,
 			html: fullBodyHtml,
 			headers: buildThreadingHeaders(originalMsgId, references),
-		});
+		}, await getOutboundConfig(env, fromDomain));
 	} catch (e) {
 		console.error("Email send failed:", (e as Error).message);
 		return { error: `Failed to send reply: ${(e as Error).message}` };
@@ -504,7 +505,7 @@ export async function toolSendEmail(
 			from: mailboxId,
 			subject: params.subject,
 			html: sanitizedBody,
-		});
+		}, await getOutboundConfig(env, fromDomain));
 	} catch (e) {
 		console.error("Email send failed:", (e as Error).message);
 		return { error: `Failed to send email: ${(e as Error).message}` };

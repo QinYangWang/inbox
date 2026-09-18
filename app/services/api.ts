@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import type { Email, Folder, Mailbox } from "~/types";
+import type { DomainConfig, Email, Folder, Mailbox } from "~/types";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -95,11 +95,23 @@ interface EmailListResponse {
 // ---------- API client ----------
 
 const api = {
-	// Config
-	getConfig: () =>
-		get<{ domains: string[]; emailAddresses: string[] }>("/api/v1/config"),
-	updateConfig: (config: { domains: string[]; emailAddresses: string[] }) =>
-		put<{ domains: string[]; emailAddresses: string[] }>("/api/v1/config", config),
+	// Encryption startup health
+	getEncryptionHealth: () => get<{ healthy: boolean; active: "v1" | "v2"; message?: string }>("/api/v1/encryption/health"),
+
+	// Domains
+	listDomains: () => get<DomainConfig[]>("/api/v1/domains"),
+	createDomain: (domain: string) => post<DomainConfig>("/api/v1/domains", { domain }),
+	getDomain: (domain: string) => get<DomainConfig>(`/api/v1/domains/${encodeURIComponent(domain)}`),
+	updateDomain: (domain: string, config: {
+		emailAddresses: string[];
+		outboundProvider: DomainConfig["outboundProvider"];
+		resendApiKeyEncrypted?: string;
+		removeResendApiKey?: boolean;
+	}) => put<DomainConfig>(`/api/v1/domains/${encodeURIComponent(domain)}`, config),
+	deleteDomain: (domain: string) => del<void>(`/api/v1/domains/${encodeURIComponent(domain)}`),
+	getDomainEncryptionKey: () => get<{ publicKey: string; keyId: string }>("/api/v1/domains/encryption-key"),
+	getEncryptionStatus: () => get<{ active: "v1" | "v2"; target: "v1" | "v2"; available: { v1: boolean; v2: boolean }; canMigrate: boolean }>("/api/v1/domains/encryption/status"),
+	migrateEncryptionMaster: () => post<{ active: "v1" | "v2"; target: "v1" | "v2"; available: { v1: boolean; v2: boolean }; canMigrate: boolean }>("/api/v1/domains/encryption/migrate"),
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),

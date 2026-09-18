@@ -1,8 +1,6 @@
 #:schema node_modules/wrangler/config-schema.json
-# Default deployment config: outbound email via Resend.
-# Inbound email always uses Cloudflare Email Routing (catch-all rule in the dashboard).
-# For the Cloudflare Email Service variant, use wrangler.cloudflare.toml:
-#   npm run deploy:cloudflare
+# Inbound email uses Cloudflare Email Routing. Resend is available per domain.
+# To also enable Cloudflare Email Service, deploy with wrangler.cloudflare.toml.
 name = "agentic-inbox"
 compatibility_date = "2025-11-28"
 main = "./workers/app.ts"
@@ -15,13 +13,6 @@ enabled = true
 # Production deploys must also define POLICY_AUD and TEAM_DOMAIN.
 # TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 # The worker now fails closed outside local development if Access is not configured.
-# DOMAINS (comma-separated) and EMAIL_ADDRESSES are only initial defaults —
-# both can be managed at runtime from the app's Settings dialog (stored in R2).
-DOMAINS = "example.com"
-EMAIL_ADDRESSES = []
-# Outbound email provider. This config uses Resend; set the secret with:
-#   wrangler secret put RESEND_API_KEY
-EMAIL_PROVIDER = "resend"
 
 [[r2_buckets]]
 binding = "BUCKET"
@@ -43,6 +34,10 @@ class_name = "EmailAgent"
 name = "EMAIL_MCP"
 class_name = "EmailMCP"
 
+[[durable_objects.bindings]]
+name = "DOMAIN_CONFIG"
+class_name = "DomainConfigDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MailboxDO"]
@@ -54,3 +49,7 @@ new_sqlite_classes = ["EmailAgent"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["EmailMCP"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["DomainConfigDO"]

@@ -18,12 +18,6 @@ enabled = true
 # Production deploys must also define POLICY_AUD and TEAM_DOMAIN.
 # TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 # The worker now fails closed outside local development if Access is not configured.
-# DOMAINS (comma-separated) and EMAIL_ADDRESSES are only initial defaults —
-# both can be managed at runtime from the app's Settings dialog (stored in R2).
-DOMAINS = "example.com"
-EMAIL_ADDRESSES = []
-# Outbound email provider. This config uses the Cloudflare Email Service binding below.
-EMAIL_PROVIDER = "cloudflare"
 
 [[send_email]]
 name = "EMAIL"
@@ -49,6 +43,10 @@ class_name = "EmailAgent"
 name = "EMAIL_MCP"
 class_name = "EmailMCP"
 
+[[durable_objects.bindings]]
+name = "DOMAIN_CONFIG"
+class_name = "DomainConfigDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MailboxDO"]
@@ -60,3 +58,7 @@ new_sqlite_classes = ["EmailAgent"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["EmailMCP"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["DomainConfigDO"]

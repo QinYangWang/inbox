@@ -5,10 +5,10 @@
 /**
  * Email sending with pluggable providers.
  *
- * Supported providers (selected via the `EMAIL_PROVIDER` env var):
+ * Supported outbound providers are selected independently for each domain:
  *
- * - `resend` (default): sends via the Resend HTTP API.
- *   Requires the `RESEND_API_KEY` secret.
+ * - `resend`: sends via the Resend HTTP API.
+ *   Uses the domain's encrypted API key.
  *   See: https://resend.com/docs/api-reference/emails/send-email
  *
  * - `cloudflare`: sends via the Cloudflare Email Service `send_email`
@@ -18,6 +18,7 @@
  */
 
 import type { Env } from "./types";
+import type { OutboundProvider } from "./domain-config";
 
 export interface SendEmailParams {
 	to: string | string[];
@@ -38,34 +39,15 @@ export interface SendEmailParams {
 	headers?: Record<string, string>;
 }
 
-export type EmailProvider = "resend" | "cloudflare";
+export type EmailProvider = Exclude<OutboundProvider, "none">;
 
-/** Providers that can be selected via the EMAIL_PROVIDER env var. */
-export const EMAIL_PROVIDERS: EmailProvider[] = ["resend", "cloudflare"];
-
-const DEFAULT_PROVIDER: EmailProvider = "resend";
-
-/**
- * Resolve the configured email provider. Defaults to Resend.
- */
-export function getEmailProvider(env: Env): EmailProvider {
-	// Read defensively: EMAIL_PROVIDER comes from wrangler vars and may be
-	// absent (or typed as a narrow literal by wrangler typegen).
-	const raw = (env as unknown as Record<string, unknown>).EMAIL_PROVIDER as
-		| string
-		| undefined;
-	const configured = (raw ?? DEFAULT_PROVIDER).toLowerCase();
-	if (!EMAIL_PROVIDERS.includes(configured as EmailProvider)) {
-		throw new Error(
-			`Unknown EMAIL_PROVIDER "${env.EMAIL_PROVIDER}". Supported providers: ${EMAIL_PROVIDERS.join(", ")}`,
-		);
-	}
-	return configured as EmailProvider;
+export interface EmailProviderConfig {
+	provider: OutboundProvider;
+	resendApiKey?: string;
 }
 
 /**
- * Send an email using the configured provider (Resend by default,
- * Cloudflare Email Service when EMAIL_PROVIDER=cloudflare).
+ * Send an email using the domain's configured provider.
  *
  * @param env     - Worker env (provider config + credentials/binding)
  * @param params  - Email parameters (to, from, subject, body, etc.)
@@ -75,9 +57,12 @@ export function getEmailProvider(env: Env): EmailProvider {
 export async function sendEmail(
 	env: Env,
 	params: SendEmailParams,
+	config: EmailProviderConfig,
 ): Promise<{ messageId: string }> {
-	const provider = getEmailProvider(env);
-	switch (provider) {
+	if (config.provider === "none") {
+		throw new Error("Outbound email is not enabled for this domain");
+	}
+	switch (config.provider) {
 		case "cloudflare": {
 			// Accessed defensively: the EMAIL binding only exists when
 			// deploying with wrangler.cloudflare.toml, so it is absent
@@ -88,8 +73,7 @@ export async function sendEmail(
 			return sendViaCloudflare(binding, params);
 		}
 		case "resend":
-		default:
-			return sendViaResend(env.RESEND_API_KEY, params);
+			return sendViaResend(config.resendApiKey, params);
 	}
 }
 
@@ -113,9 +97,7 @@ async function sendViaResend(
 	params: SendEmailParams,
 ): Promise<{ messageId: string }> {
 	if (!apiKey) {
-		throw new Error(
-			"RESEND_API_KEY is not configured. Set it as a secret (e.g. `wrangler secret put RESEND_API_KEY`) or switch EMAIL_PROVIDER to \"cloudflare\".",
-		);
+		throw new Error("A Resend API key is not configured for this domain");
 	}
 
 	const message: Record<string, unknown> = {
@@ -179,9 +161,7 @@ async function sendViaCloudflare(
 	params: SendEmailParams,
 ): Promise<{ messageId: string }> {
 	if (!binding) {
-		throw new Error(
-			"The EMAIL send_email binding is not configured. Add it to wrangler.jsonc or switch EMAIL_PROVIDER to \"resend\".",
-		);
+		throw new Error("The EMAIL send_email binding is not configured");
 	}
 
 	const message: Record<string, unknown> = {

@@ -11,7 +11,7 @@ import {
 	TooltipProvider,
 } from "@cloudflare/kumo";
 import { WarningIcon } from "@phosphor-icons/react";
-import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { forwardRef, useState } from "react";
 import {
 	isRouteErrorResponse,
@@ -22,7 +22,7 @@ import {
 	Scripts,
 	ScrollRestoration,
 } from "react-router";
-import { ApiError } from "~/services/api";
+import api, { ApiError } from "~/services/api";
 import "./index.css";
 
 function makeQueryClient() {
@@ -109,6 +109,26 @@ export function HydrateFallback() {
 	);
 }
 
+function EncryptionHealthNotice() {
+	const { data, isError } = useQuery({
+		queryKey: ["encryption-health"],
+		queryFn: api.getEncryptionHealth,
+		staleTime: Infinity,
+		retry: false,
+	});
+	if (!isError && (!data || data.healthy)) return null;
+	const message = data?.message ?? "Unable to verify the active encryption secret. Check the Worker configuration.";
+	return (
+		<div role="alert" className="fixed inset-x-0 top-0 z-[100] border-b border-red-300 bg-red-50 px-4 py-3 text-red-950 shadow-md">
+			<div className="mx-auto flex max-w-5xl items-center gap-3">
+				<WarningIcon size={20} className="shrink-0" />
+				<div className="min-w-0 flex-1"><strong>Encryption configuration error</strong><div className="text-sm">{message}</div></div>
+				<Button variant="secondary" size="sm" onClick={() => { window.location.href = "/domains"; }}>Open Domains</Button>
+			</div>
+		</div>
+	);
+}
+
 export default function App() {
 	// Use useState to ensure each SSR request gets a fresh client while the
 	// browser reuses the same singleton across navigations.
@@ -118,6 +138,7 @@ export default function App() {
 			<LinkProvider component={KumoLink}>
 				<TooltipProvider>
 					<Toasty>
+						<EncryptionHealthNotice />
 						<Outlet />
 					</Toasty>
 				</TooltipProvider>

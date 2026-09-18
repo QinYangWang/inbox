@@ -20,6 +20,11 @@ import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { Folders } from "../shared/folders";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
+import {
+	getDomainConfigStub,
+	getOutboundConfig,
+	publicDomainConfig,
+} from "./domain-config";
 
 type AppContext = Context<MailboxContext>;
 
@@ -83,56 +88,86 @@ app.use("/api/*", cors({
 }));
 app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
-// -- Config ---------------------------------------------------------
+// -- Encryption health ---------------------------------------------
 
-// -- App config (domains + allowed addresses) ----------------------
-//
-// Domains and the optional allowed-address whitelist can be managed
-// from the UI. They are persisted in R2 and fall back to the
-// DOMAINS / EMAIL_ADDRESSES wrangler vars when never saved.
+app.get("/api/v1/encryption/health", async (c) => {
+	return c.json(await getDomainConfigStub(c.env).checkEncryptionHealth());
+});
 
-const APP_CONFIG_KEY = "settings/app.json";
+// -- Domains --------------------------------------------------------
 
-const UpdateConfigBody = z.object({
-	domains: z.array(z.string().min(1)).max(100),
+const DomainName = z.string().trim().toLowerCase().regex(
+	/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/,
+	"Enter a valid domain name",
+);
+const CreateDomainBody = z.object({ domain: DomainName });
+const UpdateDomainBody = z.object({
 	emailAddresses: z.array(z.string().email()).max(1000),
+	outboundProvider: z.enum(["none", "cloudflare", "resend"]),
+	resendApiKeyEncrypted: z.string().min(1).max(4096).optional(),
+	removeResendApiKey: z.boolean().optional(),
 });
 
-interface EffectiveConfig {
-	domains: string[];
-	emailAddresses: string[];
-}
-
-async function getEffectiveConfig(env: Env): Promise<EffectiveConfig> {
-	const fallback: EffectiveConfig = {
-		domains: (env.DOMAINS || "").split(",").map((d) => d.trim()).filter(Boolean),
-		emailAddresses: (env.EMAIL_ADDRESSES ?? []) as string[],
-	};
+app.get("/api/v1/domains/encryption-key", async (c) => {
 	try {
-		const obj = await env.BUCKET.get(APP_CONFIG_KEY);
-		if (!obj) return fallback;
-		const stored = (await obj.json()) as Partial<EffectiveConfig>;
-		return {
-			domains: stored.domains ?? fallback.domains,
-			emailAddresses: stored.emailAddresses ?? fallback.emailAddresses,
-		};
-	} catch {
-		return fallback;
+		return c.json(await getDomainConfigStub(c.env).getEncryptionPublicConfig());
+	} catch (error) {
+		return c.json({ error: (error as Error).message }, 503);
 	}
-}
-
-app.get("/api/v1/config", async (c) => {
-	return c.json(await getEffectiveConfig(c.env));
 });
 
-app.put("/api/v1/config", async (c) => {
-	const body = UpdateConfigBody.parse(await c.req.json());
-	const config: EffectiveConfig = {
-		domains: [...new Set(body.domains.map((d) => d.trim().toLowerCase()).filter(Boolean))],
-		emailAddresses: [...new Set(body.emailAddresses.map((a) => a.trim().toLowerCase()))],
-	};
-	await c.env.BUCKET.put(APP_CONFIG_KEY, JSON.stringify(config));
-	return c.json(config);
+app.get("/api/v1/domains/encryption/status", async (c) => {
+	try {
+		return c.json(await getDomainConfigStub(c.env).getMasterStatus());
+	} catch (error) {
+		return c.json({ error: (error as Error).message }, 503);
+	}
+});
+
+app.post("/api/v1/domains/encryption/migrate", async (c) => {
+	try {
+		return c.json(await getDomainConfigStub(c.env).migrateMaster());
+	} catch (error) {
+		return c.json({ error: (error as Error).message }, 400);
+	}
+});
+
+app.get("/api/v1/domains", async (c) =>
+	c.json((await getDomainConfigStub(c.env).list()).map(publicDomainConfig)),
+);
+
+app.post("/api/v1/domains", async (c) => {
+	const { domain } = CreateDomainBody.parse(await c.req.json());
+	const stub = getDomainConfigStub(c.env);
+	if (await stub.get(domain)) return c.json({ error: "Domain already exists" }, 409);
+	return c.json(publicDomainConfig(await stub.create(domain)), 201);
+});
+
+app.get("/api/v1/domains/:domain", async (c) => {
+	const config = await getDomainConfigStub(c.env).get(c.req.param("domain"));
+	return config ? c.json(publicDomainConfig(config)) : c.json({ error: "Domain not found" }, 404);
+});
+
+app.put("/api/v1/domains/:domain", async (c) => {
+	const domain = DomainName.parse(c.req.param("domain"));
+	const body = UpdateDomainBody.parse(await c.req.json());
+	const emailAddresses = [...new Set(body.emailAddresses.map((a) => a.trim().toLowerCase()))];
+	if (emailAddresses.some((address) => !address.endsWith(`@${domain}`))) {
+		return c.json({ error: `All allowed addresses must belong to ${domain}` }, 400);
+	}
+	if (body.outboundProvider === "resend" && !body.resendApiKeyEncrypted) {
+		const current = await getDomainConfigStub(c.env).get(domain);
+		if (!current?.resendApiKeyEncrypted || body.removeResendApiKey) {
+			return c.json({ error: "A Resend API key is required" }, 400);
+		}
+	}
+	const config = await getDomainConfigStub(c.env).update(domain, { ...body, emailAddresses });
+	return config ? c.json(publicDomainConfig(config)) : c.json({ error: "Domain not found" }, 404);
+});
+
+app.delete("/api/v1/domains/:domain", async (c) => {
+	const deleted = await getDomainConfigStub(c.env).delete(c.req.param("domain"));
+	return deleted ? c.body(null, 204) : c.json({ error: "Domain not found" }, 404);
 });
 
 // -- Mailboxes ------------------------------------------------------
@@ -145,9 +180,11 @@ app.get("/api/v1/mailboxes", async (c) => {
 app.post("/api/v1/mailboxes", async (c) => {
 	const { name, settings, email: rawEmail } = CreateMailboxBody.parse(await c.req.json());
 	const email = rawEmail.toLowerCase();
-	const { emailAddresses: allowedAddresses } = await getEffectiveConfig(c.env);
-	if (allowedAddresses.length > 0 && !allowedAddresses.map((a) => a.toLowerCase()).includes(email)) {
-		return c.json({ error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" }, 403);
+	const domain = email.split("@")[1];
+	const domainConfig = domain ? await getDomainConfigStub(c.env).get(domain) : null;
+	if (!domainConfig) return c.json({ error: "The email domain is not configured" }, 403);
+	if (domainConfig.emailAddresses.length > 0 && !domainConfig.emailAddresses.includes(email)) {
+		return c.json({ error: "Mailbox creation is restricted by this domain's allowed-address list" }, 403);
 	}
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
@@ -221,6 +258,13 @@ app.post("/api/v1/mailboxes/:mailboxId/emails", async (c: AppContext) => {
 		throw e;
 	}
 
+	let outboundConfig;
+	try {
+		outboundConfig = await getOutboundConfig(c.env, fromDomain);
+		if (outboundConfig.provider === "none") return c.json({ error: "Outbound email is not enabled for this domain" }, 400);
+	} catch (e) {
+		return c.json({ error: (e as Error).message }, 400);
+	}
 	const { messageId, outgoingMessageId } = generateMessageId(fromDomain);
 	const stub = c.var.mailboxStub;
 	const rateLimitError = await (stub as any).checkSendRateLimit();
@@ -249,7 +293,7 @@ app.post("/api/v1/mailboxes/:mailboxId/emails", async (c: AppContext) => {
 			to, cc, bcc, from, subject, html, text,
 			attachments: attachments?.map((att) => ({ content: att.content, filename: att.filename, type: att.type, disposition: att.disposition || "attachment", contentId: att.contentId })),
 			...(in_reply_to ? { headers: buildThreadingHeaders(in_reply_to, references || []) } : {}),
-		}).catch((e) => console.error("Deferred email delivery failed:", (e as Error).message)),
+		}, outboundConfig).catch((e) => console.error("Deferred email delivery failed:", (e as Error).message)),
 	);
 	return c.json({ id: messageId, status: "sent" }, 202);
 });
@@ -394,18 +438,22 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 
 	if (!parsedEmail.to?.length || !parsedEmail.to[0].address) throw new Error("received email with empty to");
 
-	const { emailAddresses: configuredAddresses } = await getEffectiveConfig(env);
-	const allowedAddresses = configuredAddresses.map((a) => a.toLowerCase());
 	const allRecipients = parsedEmail.to.map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
 	const ccRecipients = (parsedEmail.cc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 
 	let mailboxId: string | undefined;
-	if (allowedAddresses.length > 0) {
-		mailboxId = allRecipients.find((addr) => allowedAddresses.includes(addr));
-		if (!mailboxId) { console.log(`Ignoring email: no recipient matches EMAIL_ADDRESSES.`); return; }
-	} else { mailboxId = allRecipients[0]; }
-	if (!mailboxId) throw new Error("received email with no valid recipient address");
+	for (const recipient of allRecipients) {
+		const domain = recipient.split("@")[1];
+		if (!domain) continue;
+		const config = await getDomainConfigStub(env).get(domain);
+		if (!config || config.inboundProvider !== "cloudflare") continue;
+		if (config.emailAddresses.length === 0 || config.emailAddresses.includes(recipient)) {
+			mailboxId = recipient;
+			break;
+		}
+	}
+	if (!mailboxId) { console.log("Ignoring email: no recipient matches a configured domain and allowed address."); return; }
 
 	const messageId = crypto.randomUUID();
 	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }

@@ -2,8 +2,7 @@
 POLICY_AUD=your-access-policy-audience-tag
 TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 
-# Email sending provider: "resend" (default) or "cloudflare".
-EMAIL_PROVIDER=resend
-
-# Required when EMAIL_PROVIDER=resend. Get one at https://resend.com/api-keys
-RESEND_API_KEY=your-resend-api-key
+# Random 256-bit master secrets. V1 is required; add V2 only when rotating.
+# Generate each value with: openssl rand -base64 32
+DOMAIN_ENCRYPTION_MASTER_V1=replace-with-random-base64-secret
+# DOMAIN_ENCRYPTION_MASTER_V2=replace-with-a-different-random-base64-secret

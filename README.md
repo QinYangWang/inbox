@@ -19,15 +19,13 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
 ### To set up
 
-1. Deploy to Cloudflare. The deploy flow will automatically provision R2, Durable Objects, and Workers AI. You'll be prompted for **DOMAINS**, which is the domain (yourdomain.com) you want to receive emails for (email@yourdomain.com). `DOMAINS` and `EMAIL_ADDRESSES` are only initial defaults -- after deploying you can manage both at runtime from the **Settings** dialog on the home page (stored in R2, no redeploy needed).
+1. Deploy to Cloudflare. The deploy flow automatically provisions R2, Durable Objects, and Workers AI. Open **Domains** in the app after deployment and add each domain you want to use.
 
      [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/agentic-inbox)
 
 2. **Configure Cloudflare Access** -- Enable [one-click Cloudflare Access](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/) on your Worker under Settings > Domains & Routes. The modal will show your `POLICY_AUD` and `TEAM_DOMAIN` values. `TEAM_DOMAIN` can be either your Access team URL or the full `.../cdn-cgi/access/certs` URL. **You must set these as secrets for your Worker.**
 3. **Set up Email Routing** -- In the Cloudflare dashboard, go to your domain > Email Routing and create a catch-all rule that forwards to this Worker
-4. **Configure an email sending provider** -- Outbound email supports multiple providers. Each provider has its own wrangler config, and each deployment uses exactly one of them. Inbound email always uses Cloudflare Email Routing either way:
-   * **Resend (default)** -- Deploy with `wrangler.toml`. Add your API key as a secret: `wrangler secret put RESEND_API_KEY`. Make sure your sending domain is verified in [Resend](https://resend.com/domains).
-   * **Cloudflare Email Service (optional)** -- Deploy with `npm run deploy:cloudflare`, which builds against `wrangler.cloudflare.toml` (`EMAIL_PROVIDER=cloudflare` + the `send_email` binding). See [Email Service docs](https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/)
+4. **Configure providers per domain** -- Incoming email uses Cloudflare Email Routing. Sending is off by default; enable Cloudflare Email Service or Resend from the domain management page. Make sure your domain is verified in [Resend](https://resend.com/domains) when using Resend.
 5. **Create a mailbox** -- Visit your deployed app and create a mailbox for any address on your domain (e.g. `hello@example.com`)
 
 ### Troubleshooting Access
@@ -61,25 +59,39 @@ npm run dev
 
 ### Configuration
 
-1. Set your domain in `wrangler.toml` (and `wrangler.cloudflare.toml` if you use it)
-2. Create an R2 bucket named `agentic-inbox`: `wrangler r2 bucket create agentic-inbox`
+1. Create an R2 bucket named `agentic-inbox`: `wrangler r2 bucket create agentic-inbox`
+2. Configure a random 256-bit master secret. The server generates its own RSA key pair and stores only its AES-256-GCM encrypted private key.
+
+```bash
+openssl rand -base64 32 | npx wrangler secret put DOMAIN_ENCRYPTION_MASTER_V1
+```
+
+For rotation, add the other slot:
+
+```bash
+openssl rand -base64 32 | npx wrangler secret put DOMAIN_ENCRYPTION_MASTER_V2
+```
+
+Then open **Domains** and click **Migrate to V2**. The button automatically changes to **Migrate to V1** when V2 is active, allowing the two independently generated secret slots to alternate. Migration decrypts and re-encrypts only the server-generated private key, verifies it before committing, and never decrypts stored Resend API keys. Do not delete the previously active secret until migration succeeds.
+
+On every browser app startup, the Worker checks that the active secret exists, decrypts the stored private key, imports it, and verifies it against the public key with an RSA challenge. A persistent warning links to **Domains** if the secret is missing, changed, or invalid.
+
+The private key never leaves the Worker. The browser generates a random per-secret AES-256-GCM data key, authenticates the domain/provider as additional data, and wraps the data key with the server-generated RSA-OAEP/SHA-256 public key. Only the versioned envelope is stored.
 
 ### Deploy
 
 ```bash
-npm run deploy              # Resend (default, wrangler.toml)
-npm run deploy:cloudflare   # Cloudflare Email Service (wrangler.cloudflare.toml)
+npm run deploy              # Resend support
+npm run deploy:cloudflare   # Resend + Cloudflare Email Service support
 ```
 
-For local development against the Cloudflare Email Service provider, use `npm run dev:cloudflare`.
-
-Both configs share the same Worker name and resources; inbound email always arrives via Cloudflare Email Routing regardless of which provider config you deploy.
+For local development with the remote Cloudflare Email Service binding, use `npm run dev:cloudflare` (Wrangler login is required). After startup, use the **Domains** page to add domains, restrict allowed addresses, and select a sending provider.
 
 ## Prerequisites
 
 - Cloudflare account with a domain
 - [Email Routing](https://developers.cloudflare.com/email-routing/) enabled for receiving
-- An outbound email provider: [Resend](https://resend.com/) (default config, requires `RESEND_API_KEY`) or [Email Service](https://developers.cloudflare.com/email-service/) (`wrangler.cloudflare.toml`)
+- Optional outbound email: [Resend](https://resend.com/) or [Cloudflare Email Service](https://developers.cloudflare.com/email-service/), selected per domain
 - [Workers AI](https://developers.cloudflare.com/workers-ai/) enabled (for the agent)
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) configured for deployed/shared environments (required in production)
 

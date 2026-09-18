@@ -17,6 +17,7 @@ import {
 import { SendEmailRequestSchema } from "../lib/schemas";
 import { Folders } from "../../shared/folders";
 import type { MailboxContext } from "../lib/mailbox";
+import { getOutboundConfig } from "../domain-config";
 
 type AppContext = Context<MailboxContext>;
 type RateLimitStub = { checkSendRateLimit: () => Promise<string | null> };
@@ -45,6 +46,13 @@ export async function handleReplyEmail(c: AppContext) {
 		throw e;
 	}
 
+	let outboundConfig;
+	try {
+		outboundConfig = await getOutboundConfig(c.env, fromDomain);
+		if (outboundConfig.provider === "none") return c.json({ error: "Outbound email is not enabled for this domain" }, 400);
+	} catch (e) {
+		return c.json({ error: (e as Error).message }, 400);
+	}
 	const { messageId, outgoingMessageId } = generateMessageId(fromDomain);
 
 	const rateLimitError = await (stub as unknown as RateLimitStub)
@@ -104,7 +112,7 @@ export async function handleReplyEmail(c: AppContext) {
 				contentId: att.contentId,
 			})),
 			headers: buildThreadingHeaders(originalMsgId, references),
-		}).catch((e) => {
+		}, outboundConfig).catch((e) => {
 			console.error("Deferred reply delivery failed:", (e as Error).message);
 		}),
 	);
@@ -135,6 +143,13 @@ export async function handleForwardEmail(c: AppContext) {
 		throw e;
 	}
 
+	let outboundConfig;
+	try {
+		outboundConfig = await getOutboundConfig(c.env, fromDomain);
+		if (outboundConfig.provider === "none") return c.json({ error: "Outbound email is not enabled for this domain" }, 400);
+	} catch (e) {
+		return c.json({ error: (e as Error).message }, 400);
+	}
 	const { messageId, outgoingMessageId } = generateMessageId(fromDomain);
 
 	const rateLimitError = await (stub as unknown as RateLimitStub)
@@ -189,7 +204,7 @@ export async function handleForwardEmail(c: AppContext) {
 				disposition: att.disposition,
 				contentId: att.contentId,
 			})),
-		}).catch((e) => {
+		}, outboundConfig).catch((e) => {
 			console.error("Deferred forward delivery failed:", (e as Error).message);
 		}),
 	);
