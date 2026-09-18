@@ -55,6 +55,15 @@ function slugify(text: string) { // can return "" for non-alphanumeric input
 		.replace(/--+/g, "-").replace(/^-+/, "").replace(/-+$/, "");
 }
 
+function defaultMailboxSettings(name: string) {
+	return {
+		fromName: name,
+		forwarding: { enabled: false, email: "" },
+		signature: { enabled: false, text: "" },
+		autoReply: { enabled: false, subject: "", message: "" },
+	};
+}
+
 function intQuery(c: AppContext, key: string): number | undefined {
 	const v = c.req.query(key);
 	if (!v) return undefined;
@@ -188,8 +197,7 @@ app.post("/api/v1/mailboxes", async (c) => {
 	}
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
-	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
-	const finalSettings = { ...defaultSettings, ...settings };
+	const finalSettings = { ...defaultMailboxSettings(name), ...settings };
 	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
 	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));
 	await stub.getFolders();
@@ -456,9 +464,17 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 	if (!mailboxId) { console.log("Ignoring email: no recipient matches a configured domain and allowed address."); return; }
 
 	const messageId = crypto.randomUUID();
-	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }
-
+	const mailboxKey = `mailboxes/${mailboxId}.json`;
 	const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailboxId));
+	if (!(await env.BUCKET.head(mailboxKey))) {
+		const localPart = mailboxId.split("@")[0] || mailboxId;
+		await env.BUCKET.put(mailboxKey, JSON.stringify(defaultMailboxSettings(localPart)));
+		// Initialize the mailbox Durable Object schema/folders before storing
+		// the first message. Concurrent first deliveries are safe: both write
+		// the same default R2 settings and the DO serializes initialization.
+		await stub.getFolders();
+		console.log(`Automatically created mailbox for ${mailboxId}`);
+	}
 
 	const attachmentData: StoredAttachment[] = [];
 	if (parsedEmail.attachments) {

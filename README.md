@@ -38,6 +38,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 ## Features
 
 - **Full email client** — Send and receive emails via Cloudflare Email Routing with a rich text composer, reply/forward threading, folder organization, search, and attachments
+- **Automatic mailbox creation** — The first valid incoming message for a configured domain creates its recipient mailbox automatically
 - **Per-mailbox isolation** — Each mailbox runs in its own Durable Object with SQLite storage and R2 for attachments
 - **Built-in AI agent** — Side panel with 9 email tools for reading, searching, drafting, and sending
 - **Auto-draft on new email** — Agent automatically reads inbound emails and generates draft replies, always requiring explicit confirmation before sending
