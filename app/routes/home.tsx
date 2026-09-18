@@ -10,10 +10,11 @@ import {
 	Loader,
 	Select,
 	Text,
+	Textarea,
 	useKumoToastManager,
 } from "@cloudflare/kumo";
-import { EnvelopeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { EnvelopeIcon, GearIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router";
 import api from "~/services/api";
@@ -56,6 +57,44 @@ export default function HomeRoute() {
 	} | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
 
+	// App config (domains + allowed addresses) settings dialog
+	const queryClient = useQueryClient();
+	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+	const [domainsText, setDomainsText] = useState("");
+	const [addressesText, setAddressesText] = useState("");
+	const [isSavingConfig, setIsSavingConfig] = useState(false);
+	const [settingsError, setSettingsError] = useState<string | null>(null);
+
+	const openSettings = () => {
+		setDomainsText(domains.join("\n"));
+		setAddressesText(emailAddresses.join("\n"));
+		setSettingsError(null);
+		setIsSettingsOpen(true);
+	};
+
+	const parseLines = (text: string) =>
+		text.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+
+	const handleSaveConfig = async (e: FormEvent) => {
+		e.preventDefault();
+		setSettingsError(null);
+		setIsSavingConfig(true);
+		try {
+			await api.updateConfig({
+				domains: parseLines(domainsText),
+				emailAddresses: parseLines(addressesText),
+			});
+			await queryClient.invalidateQueries({ queryKey: queryKeys.config });
+			toastManager.add({ title: "Settings saved" });
+			setIsSettingsOpen(false);
+		} catch (err: unknown) {
+			const message = (err instanceof Error ? err.message : null) || "Failed to save settings";
+			setSettingsError(message);
+		} finally {
+			setIsSavingConfig(false);
+		}
+	};
+
 	// Set default domain when config loads
 	useEffect(() => {
 		if (domains.length > 0 && !selectedDomain) {
@@ -63,11 +102,13 @@ export default function HomeRoute() {
 		}
 	}, [domains, selectedDomain]);
 
-	// Auto-create mailboxes from config (run once when both data sources are ready)
-	const autoCreateDone = useRef(false);
+	// Auto-create mailboxes from config (re-runs when the allowed
+	// addresses list changes, e.g. after saving new app settings)
+	const autoCreateDoneFor = useRef<string>("");
 	useEffect(() => {
-		if (autoCreateDone.current) return;
 		if (emailAddresses.length === 0 || !mailboxesFetched) return;
+		const addressesKey = emailAddresses.map((a) => a.toLowerCase()).sort().join(",");
+		if (autoCreateDoneFor.current === addressesKey) return;
 		const existingEmails = new Set(
 			mailboxes.map((m) => m.email.toLowerCase()),
 		);
@@ -75,10 +116,10 @@ export default function HomeRoute() {
 			(addr) => !existingEmails.has(addr.toLowerCase()),
 		);
 		if (toCreate.length === 0) {
-			autoCreateDone.current = true;
+			autoCreateDoneFor.current = addressesKey;
 			return;
 		}
-		autoCreateDone.current = true;
+		autoCreateDoneFor.current = addressesKey;
 		let cancelled = false;
 		Promise.all(
 			toCreate.map((addr) => {
@@ -145,15 +186,24 @@ export default function HomeRoute() {
 				<div className="mb-8">
 					<div className="flex items-center justify-between">
 						<h1 className="text-2xl font-bold text-kumo-default">Mailboxes</h1>
-						{!isConfigured && (
+						<div className="flex items-center gap-2">
 							<Button
-								variant="primary"
-								icon={<PlusIcon size={16} />}
-								onClick={() => setIsCreateOpen(true)}
+								variant="secondary"
+								icon={<GearIcon size={16} />}
+								onClick={openSettings}
 							>
-								New Mailbox
+								Settings
 							</Button>
-						)}
+							{!isConfigured && (
+								<Button
+									variant="primary"
+									icon={<PlusIcon size={16} />}
+									onClick={() => setIsCreateOpen(true)}
+								>
+									New Mailbox
+								</Button>
+							)}
+						</div>
 					</div>
 					{domains.length > 0 && (
 						<p className="text-sm text-kumo-subtle mt-1">
@@ -239,6 +289,72 @@ export default function HomeRoute() {
 					</div>
 				)}
 			</div>
+
+			{/* Settings Dialog: manage domains + allowed addresses */}
+			<Dialog.Root open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+				<Dialog size="sm" className="p-6">
+					<Dialog.Title className="text-base font-semibold mb-5">
+						App Settings
+					</Dialog.Title>
+					<form onSubmit={handleSaveConfig} className="space-y-4">
+						{settingsError && (
+							<Text variant="error" size="sm">
+								{settingsError}
+							</Text>
+						)}
+						<div>
+							<span className="text-sm font-medium text-kumo-default mb-1.5 block">
+								Domains
+							</span>
+							<Textarea
+								aria-label="Domains"
+								placeholder={"example.com\nexample.org"}
+								rows={3}
+								value={domainsText}
+								onChange={(e) => setDomainsText(e.target.value)}
+							/>
+							<p className="text-xs text-kumo-subtle mt-1">
+								One per line (or comma-separated). Each domain still needs a
+								catch-all Email Routing rule pointing to this Worker.
+							</p>
+						</div>
+						<div>
+							<span className="text-sm font-medium text-kumo-default mb-1.5 block">
+								Allowed Email Addresses
+							</span>
+							<Textarea
+								aria-label="Allowed email addresses"
+								placeholder={"alice@example.com\nbob@example.org"}
+								rows={4}
+								value={addressesText}
+								onChange={(e) => setAddressesText(e.target.value)}
+							/>
+							<p className="text-xs text-kumo-subtle mt-1">
+								One per line. When set, only these addresses can have
+								mailboxes and receive mail; mailboxes for them are created
+								automatically. Leave empty to allow any address.
+							</p>
+						</div>
+						<div className="flex justify-end gap-2 pt-2">
+							<Dialog.Close
+								render={(props) => (
+									<Button {...props} variant="secondary" size="sm">
+										Cancel
+									</Button>
+								)}
+							/>
+							<Button
+								type="submit"
+								variant="primary"
+								size="sm"
+								loading={isSavingConfig}
+							>
+								Save
+							</Button>
+						</div>
+					</form>
+				</Dialog>
+			</Dialog.Root>
 
 			{/* Create Dialog */}
 			<Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>

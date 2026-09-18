@@ -19,7 +19,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
 ### To set up
 
-1. Deploy to Cloudflare. The deploy flow will automatically provision R2, Durable Objects, and Workers AI. You'll be prompted for **DOMAINS**, which is the domain (yourdomain.com) you want to receive emails for (email@yourdomain.com).
+1. Deploy to Cloudflare. The deploy flow will automatically provision R2, Durable Objects, and Workers AI. You'll be prompted for **DOMAINS**, which is the domain (yourdomain.com) you want to receive emails for (email@yourdomain.com). `DOMAINS` and `EMAIL_ADDRESSES` are only initial defaults -- after deploying you can manage both at runtime from the **Settings** dialog on the home page (stored in R2, no redeploy needed).
 
      [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/agentic-inbox)
 

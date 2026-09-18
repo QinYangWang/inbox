@@ -85,11 +85,54 @@ app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
 // -- Config ---------------------------------------------------------
 
-app.get("/api/v1/config", (c) => {
-	const domainsRaw = c.env.DOMAINS || "";
-	const domains = domainsRaw.split(",").map((d) => d.trim()).filter(Boolean);
-	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	return c.json({ domains, emailAddresses });
+// -- App config (domains + allowed addresses) ----------------------
+//
+// Domains and the optional allowed-address whitelist can be managed
+// from the UI. They are persisted in R2 and fall back to the
+// DOMAINS / EMAIL_ADDRESSES wrangler vars when never saved.
+
+const APP_CONFIG_KEY = "settings/app.json";
+
+const UpdateConfigBody = z.object({
+	domains: z.array(z.string().min(1)).max(100),
+	emailAddresses: z.array(z.string().email()).max(1000),
+});
+
+interface EffectiveConfig {
+	domains: string[];
+	emailAddresses: string[];
+}
+
+async function getEffectiveConfig(env: Env): Promise<EffectiveConfig> {
+	const fallback: EffectiveConfig = {
+		domains: (env.DOMAINS || "").split(",").map((d) => d.trim()).filter(Boolean),
+		emailAddresses: (env.EMAIL_ADDRESSES ?? []) as string[],
+	};
+	try {
+		const obj = await env.BUCKET.get(APP_CONFIG_KEY);
+		if (!obj) return fallback;
+		const stored = (await obj.json()) as Partial<EffectiveConfig>;
+		return {
+			domains: stored.domains ?? fallback.domains,
+			emailAddresses: stored.emailAddresses ?? fallback.emailAddresses,
+		};
+	} catch {
+		return fallback;
+	}
+}
+
+app.get("/api/v1/config", async (c) => {
+	return c.json(await getEffectiveConfig(c.env));
+});
+
+app.put("/api/v1/config", async (c) => {
+	const body = UpdateConfigBody.parse(await c.req.json());
+	const config: EffectiveConfig = {
+		domains: [...new Set(body.domains.map((d) => d.trim().toLowerCase()).filter(Boolean))],
+		emailAddresses: [...new Set(body.emailAddresses.map((a) => a.trim().toLowerCase()))],
+	};
+	await c.env.BUCKET.put(APP_CONFIG_KEY, JSON.stringify(config));
+	return c.json(config);
 });
 
 // -- Mailboxes ------------------------------------------------------
@@ -102,7 +145,7 @@ app.get("/api/v1/mailboxes", async (c) => {
 app.post("/api/v1/mailboxes", async (c) => {
 	const { name, settings, email: rawEmail } = CreateMailboxBody.parse(await c.req.json());
 	const email = rawEmail.toLowerCase();
-	const allowedAddresses = (c.env.EMAIL_ADDRESSES ?? []) as string[];
+	const { emailAddresses: allowedAddresses } = await getEffectiveConfig(c.env);
 	if (allowedAddresses.length > 0 && !allowedAddresses.map((a) => a.toLowerCase()).includes(email)) {
 		return c.json({ error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" }, 403);
 	}
@@ -351,7 +394,8 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 
 	if (!parsedEmail.to?.length || !parsedEmail.to[0].address) throw new Error("received email with empty to");
 
-	const allowedAddresses = ((env.EMAIL_ADDRESSES ?? []) as string[]).map((a) => a.toLowerCase());
+	const { emailAddresses: configuredAddresses } = await getEffectiveConfig(env);
+	const allowedAddresses = configuredAddresses.map((a) => a.toLowerCase());
 	const allRecipients = parsedEmail.to.map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
 	const ccRecipients = (parsedEmail.cc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
