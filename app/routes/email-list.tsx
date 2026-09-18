@@ -2,7 +2,6 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Button, Pagination, Tooltip } from "@cloudflare/kumo";
 import {
 	ArchiveIcon,
 	ArrowBendUpLeftIcon,
@@ -21,7 +20,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { Folders } from "shared/folders";
 import { formatListDate } from "shared/dates";
+import AppPagination from "~/components/AppPagination";
 import MailboxSplitView from "~/components/MailboxSplitView";
+import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { getSnippetText } from "~/lib/utils";
 import {
 	useDeleteEmail,
@@ -46,7 +48,7 @@ const FOLDER_EMPTY_STATES: Record<
 	}
 > = {
 	[Folders.INBOX]: {
-		icon: <TrayIcon size={48} weight="thin" className="text-kumo-subtle" />,
+		icon: <TrayIcon size={48} weight="thin" className="text-muted-foreground" />,
 		title: "Your inbox is empty",
 		description:
 			"New emails will appear here when they arrive. Send an email to get the conversation started.",
@@ -54,47 +56,81 @@ const FOLDER_EMPTY_STATES: Record<
 	},
 	[Folders.SENT]: {
 		icon: (
-			<PaperPlaneTiltIcon size={48} weight="thin" className="text-kumo-subtle" />
+			<PaperPlaneTiltIcon size={48} weight="thin" className="text-muted-foreground" />
 		),
 		title: "No sent emails",
 		description: "Emails you send will show up here.",
 		showCompose: true,
 	},
 	[Folders.DRAFT]: {
-		icon: <FileIcon size={48} weight="thin" className="text-kumo-subtle" />,
+		icon: <FileIcon size={48} weight="thin" className="text-muted-foreground" />,
 		title: "No drafts",
 		description: "Emails you're still working on will be saved here.",
 		showCompose: true,
 	},
 	[Folders.ARCHIVE]: {
-		icon: <ArchiveIcon size={48} weight="thin" className="text-kumo-subtle" />,
+		icon: <ArchiveIcon size={48} weight="thin" className="text-muted-foreground" />,
 		title: "Archive is empty",
 		description:
 			"Move emails here to keep your inbox clean without deleting them.",
 	},
 	[Folders.TRASH]: {
-		icon: <TrashIcon size={48} weight="thin" className="text-kumo-subtle" />,
+		icon: <TrashIcon size={48} weight="thin" className="text-muted-foreground" />,
 		title: "Trash is empty",
 		description:
 			"Deleted emails will appear here. You can restore them or permanently delete them.",
 	},
 };
 
+function IconActionButton({
+	label,
+	onClick,
+	disabled,
+	className,
+	children,
+}: {
+	label: string;
+	onClick: (e: React.MouseEvent) => void;
+	disabled?: boolean;
+	className?: string;
+	children: React.ReactNode;
+}) {
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						onClick={onClick}
+						disabled={disabled}
+						aria-label={label}
+						className={className}
+					/>
+				}
+			>
+				{children}
+			</TooltipTrigger>
+			<TooltipPopup side="bottom">{label}</TooltipPopup>
+		</Tooltip>
+	);
+}
+
 function EmailListSkeleton() {
 	return (
 		<div className="animate-pulse space-y-1 p-2">
 			{Array.from({ length: 8 }).map((_, i) => (
 				<div key={i} className="flex items-center gap-3 px-3 py-3">
-					<div className="w-4 h-4 rounded bg-kumo-fill" />
-					<div className="w-5 h-5 rounded bg-kumo-fill" />
+					<div className="w-4 h-4 rounded bg-muted" />
+					<div className="w-5 h-5 rounded bg-muted" />
 					<div className="flex-1 space-y-2">
 						<div className="flex items-center gap-2">
-							<div className="h-3 w-24 rounded bg-kumo-fill" />
-							<div className="h-3 w-4 rounded bg-kumo-fill" />
-							<div className="h-3 flex-1 rounded bg-kumo-fill" />
-							<div className="h-3 w-12 rounded bg-kumo-fill" />
+							<div className="h-3 w-24 rounded bg-muted" />
+							<div className="h-3 w-4 rounded bg-muted" />
+							<div className="h-3 flex-1 rounded bg-muted" />
+							<div className="h-3 w-12 rounded bg-muted" />
 						</div>
-						<div className="h-2.5 w-3/4 rounded bg-kumo-fill" />
+						<div className="h-2.5 w-3/4 rounded bg-muted" />
 					</div>
 				</div>
 			))}
@@ -111,7 +147,7 @@ function FolderEmptyState({
 }) {
 	const config = (folder && FOLDER_EMPTY_STATES[folder]) || {
 		icon: (
-			<EnvelopeSimpleIcon size={48} weight="thin" className="text-kumo-subtle" />
+			<EnvelopeSimpleIcon size={48} weight="thin" className="text-muted-foreground" />
 		),
 		title: "No emails",
 		description: "This folder is empty.",
@@ -120,19 +156,18 @@ function FolderEmptyState({
 	return (
 		<div className="flex flex-col items-center justify-center py-24 px-6 text-center">
 			<div className="mb-4">{config.icon}</div>
-			<h3 className="text-base font-semibold text-kumo-default mb-1.5">
+			<h3 className="text-base font-semibold text-foreground mb-1.5">
 				{config.title}
 			</h3>
-			<p className="text-sm text-kumo-subtle max-w-xs mb-5">
+			<p className="text-sm text-muted-foreground max-w-xs mb-5">
 				{config.description}
 			</p>
 			{"showCompose" in config && config.showCompose && (
 				<Button
-					variant="primary"
 					size="sm"
-					icon={<PencilSimpleIcon size={16} />}
 					onClick={onCompose}
 				>
+					<PencilSimpleIcon size={16} aria-hidden="true" />
 					Compose
 				</Button>
 			)}
@@ -274,36 +309,26 @@ export default function EmailListRoute() {
 			isComposing={isComposing}
 		>
 				{/* Folder header */}
-				<div className="flex items-center justify-between px-4 py-3.5 border-b border-kumo-line shrink-0 md:px-5">
-					<h1 className="text-lg font-semibold text-kumo-default">
+				<div className="flex items-center justify-between px-4 py-3.5 border-b border-border shrink-0 md:px-5">
+					<h1 className="text-lg font-semibold text-foreground">
 						{folderName}
 					</h1>
 					<div className="flex items-center gap-1">
 						{totalCount > 0 && (
-							<span className="text-sm text-kumo-subtle mr-2 hidden sm:inline">
+							<span className="text-sm text-muted-foreground mr-2 hidden sm:inline">
 								{totalCount} conversation{totalCount !== 1 ? "s" : ""}
 							</span>
 						)}
-						<Tooltip
-							content={isRefreshing ? "Refreshing..." : "Refresh"}
-							side="bottom"
-							asChild
+						<IconActionButton
+							label={isRefreshing ? "Refreshing..." : "Refresh"}
+							onClick={handleRefresh}
+							disabled={isRefreshing}
 						>
-							<Button
-								variant="ghost"
-								shape="square"
-								size="sm"
-								icon={
-									<ArrowsClockwiseIcon
-										size={18}
-										className={isRefreshing ? "animate-spin" : ""}
-									/>
-								}
-								onClick={handleRefresh}
-								disabled={isRefreshing}
-								aria-label="Refresh"
+							<ArrowsClockwiseIcon
+								size={18}
+								className={isRefreshing ? "animate-spin" : ""}
 							/>
-						</Tooltip>
+						</IconActionButton>
 					</div>
 				</div>
 
@@ -328,14 +353,14 @@ export default function EmailListRoute() {
 												handleRowClick(email);
 											}
 										}}
-										className={`group flex items-center gap-3 w-full text-left cursor-pointer transition-colors border-b border-kumo-line px-4 py-2.5 md:px-6 md:py-3 ${
+										className={`group flex items-center gap-3 w-full text-left cursor-pointer transition-colors border-b border-border px-4 py-2.5 md:px-6 md:py-3 ${
 											isPanelOpen ? "md:px-4 md:py-2.5" : ""
-										} ${isSelected ? "bg-kumo-tint" : "hover:bg-kumo-tint"}`}
+										} ${isSelected ? "bg-accent" : "hover:bg-accent"}`}
 									>
 										{/* Unread dot */}
 										<div className="w-2.5 shrink-0 flex justify-center">
 											{hasUnread(email) && (
-												<div className="h-2 w-2 rounded-full bg-kumo-brand" />
+												<div className="h-2 w-2 rounded-full bg-primary" />
 											)}
 										</div>
 
@@ -353,8 +378,8 @@ export default function EmailListRoute() {
 												weight={email.starred ? "fill" : "regular"}
 												className={
 													email.starred
-														? "text-kumo-warning"
-														: "text-kumo-subtle hover:text-kumo-warning"
+														? "text-warning"
+														: "text-muted-foreground hover:text-warning"
 												}
 											/>
 										</button>
@@ -363,39 +388,40 @@ export default function EmailListRoute() {
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
 												<span
-													className={`truncate text-sm ${hasUnread(email) ? "font-semibold text-kumo-default" : "text-kumo-strong"}`}
+													className={`truncate text-sm ${hasUnread(email) ? "font-semibold text-foreground" : "text-foreground/70"}`}
 												>
 													{formatParticipants(email)}
 												</span>
 												{(email.thread_count ?? 1) > 1 && (
-													<span className="shrink-0 text-xs text-kumo-subtle bg-kumo-fill rounded-full px-1.5 py-0.5 font-medium">
+													<span className="shrink-0 text-xs text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 font-medium">
 														{email.thread_count}
 													</span>
 												)}
 												{email.has_draft && (
-													<span className="shrink-0 text-xs text-kumo-destructive font-medium">
+													<span className="shrink-0 text-xs text-destructive font-medium">
 														Draft
 													</span>
 												)}
 												{email.needs_reply && !email.has_draft && (
-													<Tooltip content="Needs reply" asChild>
-														<span className="shrink-0 text-kumo-warning">
-															<ArrowBendUpLeftIcon size={14} weight="bold" />
-														</span>
+													<Tooltip>
+														<TooltipTrigger render={<span className="shrink-0 text-warning" />}>
+															<ArrowBendUpLeftIcon size={14} weight="bold" aria-hidden="true" />
+														</TooltipTrigger>
+														<TooltipPopup>Needs reply</TooltipPopup>
 													</Tooltip>
 												)}
-												<span className="text-sm text-kumo-subtle shrink-0 ml-auto">
+												<span className="text-sm text-muted-foreground shrink-0 ml-auto">
 													{formatListDate(email.date)}
 												</span>
 											</div>
 											<div className="truncate text-sm mt-0.5">
 												<span
-													className={hasUnread(email) ? "font-medium text-kumo-default" : "text-kumo-subtle"}
+													className={hasUnread(email) ? "font-medium text-foreground" : "text-muted-foreground"}
 												>
 													{email.subject}
 												</span>
 											{snippet && (
-												<span className="text-kumo-subtle font-normal">
+												<span className="text-muted-foreground font-normal">
 													{" "}&mdash; {snippet}
 												</span>
 											)}
@@ -404,34 +430,26 @@ export default function EmailListRoute() {
 
 										{/* Hover actions */}
 										<div className="hidden group-hover:flex items-center shrink-0">
-											<Tooltip content={email.read ? "Mark unread" : "Mark read"} asChild>
-												<Button
-													variant="ghost"
-													shape="square"
-													size="sm"
-													icon={email.read ? <EnvelopeSimpleIcon size={14} /> : <EnvelopeOpenIcon size={14} />}
-													onClick={(e) => {
-														e.stopPropagation();
-														if (mailboxId)
-															updateEmail.mutate({
-																mailboxId,
-																id: email.id,
-																data: { read: !email.read },
-															});
-													}}
-													aria-label={email.read ? "Mark unread" : "Mark read"}
-												/>
-											</Tooltip>
-											<Tooltip content="Delete" asChild>
-												<Button
-													variant="ghost"
-													shape="square"
-													size="sm"
-													icon={<TrashIcon size={14} />}
-													onClick={(e) => handleDelete(e, email.id)}
-													aria-label="Delete"
-												/>
-											</Tooltip>
+											<IconActionButton
+												label={email.read ? "Mark unread" : "Mark read"}
+												onClick={(e) => {
+													e.stopPropagation();
+													if (mailboxId)
+														updateEmail.mutate({
+															mailboxId,
+															id: email.id,
+															data: { read: !email.read },
+														});
+												}}
+											>
+												{email.read ? <EnvelopeSimpleIcon size={14} /> : <EnvelopeOpenIcon size={14} />}
+											</IconActionButton>
+											<IconActionButton
+												label="Delete"
+												onClick={(e) => handleDelete(e, email.id)}
+											>
+												<TrashIcon size={14} />
+											</IconActionButton>
 										</div>
 									</div>
 								);
@@ -447,12 +465,11 @@ export default function EmailListRoute() {
 
 				{/* Pagination */}
 				{totalCount > PAGE_SIZE && (
-					<div className="flex justify-center py-3 border-t border-kumo-line shrink-0">
-						<Pagination
+					<div className="flex justify-center py-3 border-t border-border shrink-0">
+						<AppPagination
 							page={page}
-							setPage={setPage}
-							perPage={PAGE_SIZE}
-							totalCount={totalCount}
+							pageCount={Math.ceil(totalCount / PAGE_SIZE)}
+							onPageChange={setPage}
 						/>
 					</div>
 				)}

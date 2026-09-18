@@ -2,7 +2,16 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Button, Dialog } from "@cloudflare/kumo";
+import { Button } from "~/components/ui/button";
+import {
+	Dialog,
+	DialogClose,
+	DialogFooter,
+	DialogHeader,
+	DialogPanel,
+	DialogPopup,
+	DialogTitle,
+} from "~/components/ui/dialog";
 import { downloadFile } from "~/lib/utils";
 import type { Email } from "~/types";
 
@@ -65,94 +74,100 @@ export default function EmailPanelDialogs({
 
 	return (
 		<>
-			<Dialog.Root
+			<Dialog
 				open={sourceViewEmail !== null}
 				onOpenChange={(open) => {
 					if (!open) onCloseSource();
 				}}
 			>
-				<Dialog size="lg">
-					<Dialog.Title>
-						Email Source Headers
-						{sourceViewEmail && (
-							<span className="text-sm font-normal text-kumo-subtle ml-2">
-								{sourceViewEmail.subject}
-							</span>
-						)}
-					</Dialog.Title>
-					{sourceViewEmail && (
-						<div className="mt-4 max-h-[60vh] overflow-y-auto">
-							<table className="w-full text-sm border-collapse">
-								<tbody>
-									{sourceHeaders.map((header, idx) => (
-										<tr
-											key={`${header.key}-${idx}`}
-											className={idx % 2 === 0 ? "bg-kumo-tint/50" : ""}
-										>
-											<td className="py-1.5 px-3 font-mono font-semibold text-kumo-default whitespace-nowrap align-top w-[160px]">
-												{header.key}
-											</td>
-											<td className="py-1.5 px-3 font-mono text-kumo-subtle break-all">
-												{header.value}
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-							{sourceHeaders.length === 0 && (
-								<p className="text-sm text-kumo-subtle text-center py-8">
-									No header data available for this email.
-								</p>
+				<DialogPopup className="sm:max-w-2xl">
+					<DialogHeader>
+						<DialogTitle>
+							Email Source Headers
+							{sourceViewEmail && (
+								<span className="text-sm font-normal text-muted-foreground ml-2">
+									{sourceViewEmail.subject}
+								</span>
 							)}
-						</div>
-					)}
-					<div className="flex justify-end mt-4">
-						<Dialog.Close>
-							<Button variant="secondary" size="sm">
-								Close
-							</Button>
-						</Dialog.Close>
-					</div>
-				</Dialog>
-			</Dialog.Root>
+						</DialogTitle>
+					</DialogHeader>
+					<DialogPanel>
+						{sourceViewEmail && (
+							<div className="max-h-[60vh] overflow-y-auto">
+								<table className="w-full text-sm border-collapse">
+									<tbody>
+										{sourceHeaders.map((header, idx) => (
+											<tr
+												key={`${header.key}-${idx}`}
+												className={idx % 2 === 0 ? "bg-accent/50" : ""}
+											>
+												<td className="py-1.5 px-3 font-mono font-semibold text-foreground whitespace-nowrap align-top w-[160px]">
+													{header.key}
+												</td>
+												<td className="py-1.5 px-3 font-mono text-muted-foreground break-all">
+													{header.value}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+								{sourceHeaders.length === 0 && (
+									<p className="text-sm text-muted-foreground text-center py-8">
+										No header data available for this email.
+									</p>
+								)}
+							</div>
+						)}
+					</DialogPanel>
+					<DialogFooter>
+						<DialogClose render={<Button variant="ghost" size="sm" />}>
+							Close
+						</DialogClose>
+					</DialogFooter>
+				</DialogPopup>
+			</Dialog>
 
-			<Dialog.Root
+			<Dialog
 				open={previewImage !== null}
 				onOpenChange={(open) => {
 					if (!open) onClosePreview();
 				}}
 			>
-				<Dialog size="lg">
-					<Dialog.Title>{previewImage?.filename}</Dialog.Title>
-					{previewImage && (
-						<div className="mt-4 flex flex-col items-center justify-center bg-kumo-tint/30 rounded-lg p-4 min-h-[200px]">
-							<img
-								src={previewImage.url}
-								alt={previewImage.filename}
-								className="max-w-full max-h-[70vh] object-contain rounded shadow-sm"
-							/>
-						</div>
-					)}
-					<div className="flex justify-between items-center mt-4">
-						<Button
-							variant="secondary"
-							size="sm"
-							onClick={() => {
-								if (previewImage) {
-									downloadFile(previewImage.url, previewImage.filename);
-								}
-							}}
-						>
-							Download Original
-						</Button>
-						<Dialog.Close>
-							<Button variant="primary" size="sm">
-								Close
+				<DialogPopup className="sm:max-w-2xl">
+					<DialogHeader>
+						<DialogTitle>{previewImage?.filename}</DialogTitle>
+					</DialogHeader>
+					<DialogPanel>
+						{previewImage && (
+							<div className="flex flex-col items-center justify-center bg-accent/30 rounded-lg p-4 min-h-[200px]">
+								<img
+									src={previewImage.url}
+									alt={previewImage.filename}
+									className="max-w-full max-h-[70vh] object-contain rounded shadow-sm"
+								/>
+							</div>
+						)}
+					</DialogPanel>
+					<DialogFooter>
+						<div className="flex w-full items-center justify-between">
+							<Button
+								variant="secondary"
+								size="sm"
+								onClick={() => {
+									if (previewImage) {
+										downloadFile(previewImage.url, previewImage.filename);
+									}
+								}}
+							>
+								Download Original
 							</Button>
-						</Dialog.Close>
-					</div>
-				</Dialog>
-			</Dialog.Root>
+							<DialogClose render={<Button size="sm" />}>
+								Close
+							</DialogClose>
+						</div>
+					</DialogFooter>
+				</DialogPopup>
+			</Dialog>
 		</>
 	);
 }

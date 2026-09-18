@@ -2,7 +2,6 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Loader, Tooltip } from "@cloudflare/kumo";
 import {
 	ArrowUpIcon,
 	RobotIcon,
@@ -22,6 +21,10 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Spinner } from "~/components/ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { UIMessage } from "ai";
 
@@ -81,17 +84,17 @@ function ToolCallBadge({
 		state === "output-error";
 
 	return (
-		<div className="flex items-center gap-1.5 py-1 px-2 rounded bg-kumo-fill/50 text-xs">
-			<span className="text-kumo-brand">{info.icon}</span>
-			<span className="text-kumo-strong">{info.label}</span>
+		<div className="flex items-center gap-1.5 py-1 px-2 rounded bg-muted/50 text-xs">
+			<span className="text-primary">{info.icon}</span>
+			<span className="text-foreground/70">{info.label}</span>
 			{isDone ? (
 				<CheckCircleIcon
 					size={12}
 					weight="fill"
-					className="text-kumo-success ml-auto"
+					className="text-success ml-auto"
 				/>
 			) : (
-				<Loader size="sm" className="ml-auto" />
+				<Spinner className="ml-auto size-3.5" />
 			)}
 		</div>
 	);
@@ -120,12 +123,11 @@ function DraftActions({
 	return (
 		<div className="flex gap-1.5 mt-1">
 			<Button
-				variant="primary"
 				size="sm"
-				icon={<PencilSimpleIcon size={14} />}
 				onClick={onEdit}
 				disabled={disabled}
 			>
+				<PencilSimpleIcon size={14} aria-hidden="true" />
 				Edit & send in composer
 			</Button>
 		</div>
@@ -150,8 +152,8 @@ function MessageBubble({
 			<div
 				className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
 					isUser
-						? "bg-kumo-brand text-kumo-inverse"
-						: "bg-kumo-fill text-kumo-default"
+						? "bg-primary text-primary-foreground"
+						: "bg-muted text-foreground"
 				}`}
 			>
 				{isUser ? (
@@ -173,8 +175,8 @@ function MessageBubble({
 								key={key}
 								className={`rounded-lg px-3 py-2 text-[13px] leading-relaxed break-words overflow-wrap-anywhere ${
 									isUser
-										? "bg-kumo-brand text-kumo-inverse rounded-br-sm"
-										: "bg-kumo-elevated text-kumo-default border border-kumo-line rounded-bl-sm overflow-hidden"
+										? "bg-primary text-primary-foreground rounded-br-sm"
+										: "bg-popover text-foreground border border-border rounded-bl-sm overflow-hidden"
 								}`}
 							>
 								{isUser ? (
@@ -189,7 +191,7 @@ function MessageBubble({
 													target="_blank"
 													rel="noopener noreferrer"
 													style={{
-														color: "var(--color-link)",
+														color: "var(--color-info)",
 														textDecoration: "underline",
 													}}
 												>
@@ -235,7 +237,7 @@ function MessageBubble({
 												</h5>
 											),
 											code: ({ children }) => (
-												<code className="bg-kumo-fill px-1 py-0.5 rounded text-[12px]">
+												<code className="bg-muted px-1 py-0.5 rounded text-[12px]">
 													{children}
 												</code>
 											),
@@ -247,17 +249,17 @@ function MessageBubble({
 												</div>
 											),
 											thead: ({ children }) => (
-												<thead className="border-b border-kumo-line bg-kumo-fill/30">
+												<thead className="border-b border-border bg-muted/30">
 													{children}
 												</thead>
 											),
 											th: ({ children }) => (
-												<th className="text-left px-2 py-1 font-semibold text-kumo-strong">
+												<th className="text-left px-2 py-1 font-semibold text-foreground/70">
 													{children}
 												</th>
 											),
 											td: ({ children }) => (
-												<td className="px-2 py-1 border-b border-kumo-line/50">
+												<td className="px-2 py-1 border-b border-border/50">
 													{children}
 												</td>
 											),
@@ -345,29 +347,21 @@ function AgentChatConnected({
 	return (
 		<div className="flex flex-col h-full">
 			{/* Header */}
-			<div className="flex items-center justify-between px-3 py-1.5 border-b border-kumo-line shrink-0">
+			<div className="flex items-center justify-between px-3 py-1.5 border-b border-border shrink-0">
 				<div className="flex items-center gap-2">
-					<Badge variant="beta">AI</Badge>
-					<span className="text-xs text-kumo-subtle">
+					<Badge variant="info">AI</Badge>
+					<span className="text-xs text-muted-foreground">
 						Email Agent
 					</span>
 				</div>
 				<div className="flex items-center gap-1">
-					{isStreaming && <Loader size="sm" />}
+					{isStreaming && <Spinner className="size-4" />}
 					{messages.length > 0 && (
-						<Tooltip content="Clear chat" asChild>
-							<Button
-								variant="ghost"
-								shape="square"
-								size="sm"
-								icon={<TrashIcon size={14} />}
-								onClick={() => {
-									if (window.confirm("Clear chat history?")) {
-										setMessages([]);
-									}
-								}}
-								aria-label="Clear chat"
-							/>
+						<Tooltip>
+							<TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={() => { if (window.confirm("Clear chat history?")) { setMessages([]); } }} aria-label="Clear chat" />}>
+								<TrashIcon size={14} aria-hidden="true" />
+							</TooltipTrigger>
+							<TooltipPopup>Clear chat</TooltipPopup>
 						</Tooltip>
 					)}
 				</div>
@@ -377,14 +371,14 @@ function AgentChatConnected({
 			<div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4">
 				{messages.length === 0 ? (
 					<div className="flex flex-col items-center justify-center h-full gap-4">
-						<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-kumo-brand/10">
+						<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
 							<RobotIcon
 								size={24}
 								weight="duotone"
-								className="text-kumo-brand"
+								className="text-primary"
 							/>
 						</div>
-						<p className="text-xs text-kumo-subtle text-center leading-relaxed px-4">
+						<p className="text-xs text-muted-foreground text-center leading-relaxed px-4">
 							I can read emails, search conversations, and draft
 							replies.
 						</p>
@@ -396,7 +390,7 @@ function AgentChatConnected({
 									onClick={() =>
 										sendMessage({ text: prompt })
 									}
-									className="text-left px-3 py-2 rounded-lg border border-kumo-line text-xs text-kumo-strong hover:bg-kumo-tint hover:border-kumo-fill-hover transition-colors cursor-pointer bg-transparent"
+									className="text-left px-3 py-2 rounded-lg border border-border text-xs text-foreground/70 hover:bg-accent hover:border-input transition-colors cursor-pointer bg-transparent"
 								>
 									{prompt}
 								</button>
@@ -455,12 +449,12 @@ function AgentChatConnected({
 						))}
 						{isStreaming && (
 							<div className="flex gap-2">
-								<div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kumo-fill text-kumo-default">
+								<div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
 									<RobotIcon size={12} weight="bold" />
 								</div>
-								<div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-kumo-elevated border border-kumo-line rounded-bl-sm">
-									<Loader size="sm" />
-									<span className="text-xs text-kumo-subtle">
+								<div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-popover border border-border rounded-bl-sm">
+									<Spinner className="size-4" />
+									<span className="text-xs text-muted-foreground">
 										Thinking...
 									</span>
 								</div>
@@ -471,15 +465,15 @@ function AgentChatConnected({
 			</div>
 
 			{/* Input */}
-			<div className="shrink-0 border-t border-kumo-line px-3 py-2">
+			<div className="shrink-0 border-t border-border px-3 py-2">
 				{isStreaming ? (
 					<div className="flex justify-center">
 						<Button
 							variant="secondary"
 							size="sm"
-							icon={<StopIcon size={14} weight="fill" />}
 							onClick={() => stop()}
 						>
+							<StopIcon size={14} weight="fill" aria-hidden="true" />
 							Stop generating
 						</Button>
 					</div>
@@ -495,7 +489,7 @@ function AgentChatConnected({
 							placeholder="Ask your email agent..."
 							rows={1}
 							aria-label="Chat message input"
-							className="flex-1 resize-none rounded-lg border border-kumo-line bg-kumo-control px-3 py-2 text-xs text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring min-h-[36px] max-h-[100px]"
+							className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring min-h-[36px] max-h-[100px]"
 							style={{ height: "auto", overflow: "hidden" }}
 							onInput={(e) => {
 								const t = e.target as HTMLTextAreaElement;
@@ -506,14 +500,13 @@ function AgentChatConnected({
 							}}
 						/>
 						<Button
-							variant="primary"
-							shape="square"
-							size="sm"
+							size="icon-sm"
 							disabled={!inputValue.trim()}
-							icon={<ArrowUpIcon size={14} weight="bold" />}
 							onClick={handleSend}
 							aria-label="Send message"
-						/>
+						>
+							<ArrowUpIcon size={14} weight="bold" aria-hidden="true" />
+						</Button>
 					</div>
 				)}
 			</div>
@@ -548,7 +541,7 @@ export default function AgentPanel() {
 	if (loadError) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
-				<span className="text-xs text-kumo-error">{loadError}</span>
+				<span className="text-xs text-destructive">{loadError}</span>
 			</div>
 		);
 	}
@@ -556,8 +549,8 @@ export default function AgentPanel() {
 	if (!hooks) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-2">
-				<Loader size="base" />
-				<span className="text-xs text-kumo-subtle">
+				<Spinner />
+				<span className="text-xs text-muted-foreground">
 					Connecting...
 				</span>
 			</div>

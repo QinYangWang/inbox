@@ -2,7 +2,6 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Tooltip } from "@cloudflare/kumo";
 import {
 	CaretDownIcon,
 	CaretUpIcon,
@@ -11,6 +10,9 @@ import {
 	PencilSimpleIcon,
 	TrashIcon,
 } from "@phosphor-icons/react";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import EmailAttachmentList from "~/components/EmailAttachmentList";
 import EmailIframe from "~/components/EmailIframe";
 import {
@@ -42,10 +44,10 @@ function Avatar({ isDraft, isSelf, sender }: { isDraft?: boolean; isSelf: boolea
 		<div
 			className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
 				isDraft
-					? "bg-kumo-fill text-kumo-subtle"
+					? "bg-muted text-muted-foreground"
 					: isSelf
-						? "bg-kumo-brand text-kumo-inverse"
-						: "bg-kumo-fill text-kumo-default"
+						? "bg-primary text-primary-foreground"
+						: "bg-muted text-foreground"
 			}`}
 		>
 			{isDraft ? "D" : sender.charAt(0).toUpperCase()}
@@ -69,7 +71,7 @@ export default function ThreadMessage({
 	onPreviewImage,
 }: ThreadMessageProps) {
 	const isSelf = email.sender === mailboxEmail;
-	const containerClassName = `${!isLast ? "border-b border-kumo-line" : ""} ${isDraft ? "border-l-2 border-l-kumo-warning bg-kumo-warning/[0.02]" : ""}`;
+	const containerClassName = `${!isLast ? "border-b border-border" : ""} ${isDraft ? "border-l-2 border-l-warning bg-warning/[0.02]" : ""}`;
 	const senderLabel = isDraft ? "Draft reply" : isSelf ? "You" : email.sender;
 
 	if (!isExpanded) {
@@ -78,23 +80,23 @@ export default function ThreadMessage({
 				<button
 					type="button"
 					onClick={onToggleExpand}
-					className="w-full flex items-center gap-3 px-4 py-3 hover:bg-kumo-tint rounded-lg text-left"
+					className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent rounded-lg text-left"
 				>
 					<Avatar isDraft={isDraft} isSelf={isSelf} sender={email.sender} />
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center justify-between">
-							<span className="text-sm font-medium text-kumo-default truncate">
+							<span className="text-sm font-medium text-foreground truncate">
 								{senderLabel}
 							</span>
-							<span className="text-xs text-kumo-subtle shrink-0">
+							<span className="text-xs text-muted-foreground shrink-0">
 								{formatDetailDate(email.date)}
 							</span>
 						</div>
-						<p className="text-xs text-kumo-subtle truncate">
+						<p className="text-xs text-muted-foreground truncate">
 							{stripHtml(email.body || "").slice(0, 80)}
 						</p>
 					</div>
-					<CaretDownIcon size={14} className="text-kumo-subtle shrink-0" />
+					<CaretDownIcon size={14} className="text-muted-foreground shrink-0" />
 				</button>
 			</div>
 		);
@@ -111,35 +113,30 @@ export default function ThreadMessage({
 							className="shrink-0"
 							aria-label="Collapse message"
 						>
-							<div className="cursor-pointer hover:ring-2 hover:ring-kumo-brand/30 transition-shadow rounded-full">
+							<div className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-shadow rounded-full">
 								<Avatar isDraft={isDraft} isSelf={isSelf} sender={email.sender} />
 							</div>
 						</button>
 						<div className="min-w-0">
 							<div className="flex items-center gap-2">
-								<span className="text-sm font-medium text-kumo-default truncate">
+								<span className="text-sm font-medium text-foreground truncate">
 									{senderLabel}
 								</span>
 								{isDraft && <Badge variant="outline">Draft</Badge>}
 							</div>
-							<div className="text-xs text-kumo-subtle">To: {email.recipient}</div>
+							<div className="text-xs text-muted-foreground">To: {email.recipient}</div>
 						</div>
 					</div>
 					<div className="flex items-center gap-1 shrink-0">
-						<span className="text-xs text-kumo-subtle">
+						<span className="text-xs text-muted-foreground">
 							{formatShortDate(email.date)}
 						</span>
 						{onViewSource && (
-							<Tooltip content="View source" side="bottom" asChild>
-								<Button
-									variant="ghost"
-									shape="square"
-									size="sm"
-									icon={<CodeIcon size={14} />}
-									onClick={onViewSource}
-									aria-label="View source"
-									className="transition-opacity !h-6 !w-6"
-								/>
+							<Tooltip>
+								<TooltipTrigger render={<Button variant="ghost" size="icon-xs" onClick={onViewSource} aria-label="View source" className="transition-opacity" />}>
+									<CodeIcon size={14} aria-hidden="true" />
+								</TooltipTrigger>
+								<TooltipPopup side="bottom">View source</TooltipPopup>
 							</Tooltip>
 						)}
 						<button
@@ -150,7 +147,7 @@ export default function ThreadMessage({
 						>
 							<CaretUpIcon
 								size={14}
-								className="text-kumo-subtle hover:text-kumo-default transition-colors"
+								className="text-muted-foreground hover:text-foreground transition-colors"
 							/>
 						</button>
 					</div>
@@ -172,13 +169,12 @@ export default function ThreadMessage({
 					<div className="flex gap-2 mt-3 md:ml-[42px]">
 						{onSendDraft && (
 							<Button
-								variant="primary"
 								size="sm"
-								icon={<PaperPlaneTiltIcon size={14} />}
 								onClick={onSendDraft}
 								loading={isSending}
 								disabled={isSending}
 							>
+								<PaperPlaneTiltIcon size={14} aria-hidden="true" />
 								{isSending ? "Sending..." : "Send"}
 							</Button>
 						)}
@@ -186,10 +182,10 @@ export default function ThreadMessage({
 							<Button
 								variant="secondary"
 								size="sm"
-								icon={<PencilSimpleIcon size={14} />}
 								onClick={onEditDraft}
 								disabled={isSending}
 							>
+								<PencilSimpleIcon size={14} aria-hidden="true" />
 								Edit
 							</Button>
 						)}
@@ -197,10 +193,10 @@ export default function ThreadMessage({
 							<Button
 								variant="ghost"
 								size="sm"
-								icon={<TrashIcon size={14} />}
 								onClick={onDeleteDraft}
 								disabled={isSending}
 							>
+								<TrashIcon size={14} aria-hidden="true" />
 								Discard
 							</Button>
 						)}

@@ -2,26 +2,29 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import {
-	Button,
-	Empty,
-	LinkProvider,
-	Loader,
-	Toasty,
-	TooltipProvider,
-} from "@cloudflare/kumo";
 import { WarningIcon } from "@phosphor-icons/react";
 import { MutationCache, QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { forwardRef, useState } from "react";
+import { useState } from "react";
 import {
 	isRouteErrorResponse,
 	Links,
 	Meta,
 	Outlet,
-	Link as RouterLink,
 	Scripts,
 	ScrollRestoration,
 } from "react-router";
+import { Button } from "~/components/ui/button";
+import {
+	Empty,
+	EmptyContent,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "~/components/ui/empty";
+import { Spinner } from "~/components/ui/spinner";
+import { ToastProvider } from "~/components/ui/toast";
+import { TooltipProvider } from "~/components/ui/tooltip";
 import api, { ApiError } from "~/services/api";
 import "./index.css";
 
@@ -63,18 +66,6 @@ function getQueryClient() {
 	return browserQueryClient;
 }
 
-const KumoLink = forwardRef<
-	HTMLAnchorElement,
-	React.AnchorHTMLAttributes<HTMLAnchorElement> & { href?: string }
->(function KumoLink({ href, ...props }, ref) {
-	if (href && !href.startsWith("http")) {
-		return (
-			<RouterLink to={href} ref={ref} {...(props as Record<string, unknown>)} />
-		);
-	}
-	return <a href={href} ref={ref} {...props} />;
-});
-
 export function Layout({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en">
@@ -92,7 +83,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<Meta />
 				<Links />
 			</head>
-			<body className="bg-kumo-recessed text-kumo-default antialiased">
+			<body className="relative isolate bg-muted text-foreground antialiased">
 				{children}
 				<ScrollRestoration />
 				<Scripts />
@@ -104,7 +95,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export function HydrateFallback() {
 	return (
 		<div className="flex items-center justify-center h-screen">
-			<Loader size="lg" />
+			<Spinner className="size-6" />
 		</div>
 	);
 }
@@ -119,11 +110,13 @@ function EncryptionHealthNotice() {
 	if (!isError && (!data || data.healthy)) return null;
 	const message = data?.message ?? "Unable to verify the active encryption secret. Check the Worker configuration.";
 	return (
-		<div role="alert" className="fixed inset-x-0 top-0 z-[100] border-b border-red-300 bg-red-50 px-4 py-3 text-red-950 shadow-md">
-			<div className="mx-auto flex max-w-5xl items-center gap-3">
-				<WarningIcon size={20} className="shrink-0" />
-				<div className="min-w-0 flex-1"><strong>Encryption configuration error</strong><div className="text-sm">{message}</div></div>
-				<Button variant="secondary" size="sm" onClick={() => { window.location.href = "/domains"; }}>Open Domains</Button>
+		<div role="alert" className="sticky top-0 z-[100] border-b border-red-300 bg-red-50 px-4 py-3 text-red-950 shadow-md">
+			<div className="mx-auto flex max-w-5xl flex-col items-start gap-3 sm:flex-row sm:items-center">
+				<div className="flex min-w-0 flex-1 items-start gap-3">
+					<WarningIcon size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
+					<div className="min-w-0"><strong>Encryption configuration error</strong><div className="break-words text-sm">{message}</div></div>
+				</div>
+				<Button className="self-end sm:self-auto" variant="secondary" size="sm" onClick={() => { window.location.href = "/domains"; }}>Open Domains</Button>
 			</div>
 		</div>
 	);
@@ -135,14 +128,12 @@ export default function App() {
 	const [queryClient] = useState(getQueryClient);
 	return (
 		<QueryClientProvider client={queryClient}>
-			<LinkProvider component={KumoLink}>
-				<TooltipProvider>
-					<Toasty>
-						<EncryptionHealthNotice />
-						<Outlet />
-					</Toasty>
-				</TooltipProvider>
-			</LinkProvider>
+			<TooltipProvider>
+				<ToastProvider>
+					<EncryptionHealthNotice />
+					<Outlet />
+				</ToastProvider>
+			</TooltipProvider>
 		</QueryClientProvider>
 	);
 }
@@ -168,21 +159,24 @@ export function ErrorBoundary({ error }: { error: unknown }) {
 
 	return (
 		<div className="flex items-center justify-center min-h-screen p-8">
-			<Empty
-				icon={<WarningIcon size={48} className="text-kumo-inactive" />}
-				title={status === 404 ? "404 — Page not found" : title}
-				description={description}
-				contents={
+			<Empty>
+				<EmptyHeader>
+					<EmptyMedia variant="icon">
+						<WarningIcon aria-hidden="true" />
+					</EmptyMedia>
+					<EmptyTitle>{status === 404 ? "404 — Page not found" : title}</EmptyTitle>
+					<EmptyDescription>{description}</EmptyDescription>
+				</EmptyHeader>
+				<EmptyContent>
 					<Button
-						variant="primary"
 						onClick={() => {
 							window.location.href = "/";
 						}}
 					>
 						Go Home
 					</Button>
-				}
-			/>
+				</EmptyContent>
+			</Empty>
 		</div>
 	);
 }

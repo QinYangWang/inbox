@@ -2,8 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { useKumoToastManager } from "@cloudflare/kumo";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { toastManager } from "~/components/ui/toast";
 import {
 	buildQuotedReplyBlock,
 	escapeHtml,
@@ -163,7 +163,6 @@ function buildInitialComposeFields(
 }
 
 export function useComposeForm(mailboxId?: string, _folder?: string) {
-	const toastManager = useKumoToastManager();
 	const { composeOptions, closePanel, closeCompose } = useUIStore();
 	const { data: currentMailbox } = useMailbox(mailboxId);
 	const sendEmailMutation = useSendEmail();
@@ -227,7 +226,7 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 		catch (err: unknown) {
 			const message = (err instanceof Error ? err.message : null) || "Failed to save draft.";
 			setError(message);
-			toastManager.add({ title: message, variant: "error" });
+			toastManager.add({ title: message, type: "error" });
 		}
 		finally { setIsSavingDraft(false); }
 	};
@@ -258,7 +257,7 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 			if (draftId) deleteEmailMutation.mutate({ mailboxId, id: draftId });
 			toastManager.add({ title: "Email sent!" });
 			onClose();
-		} catch (err: unknown) { const message = (err instanceof Error ? err.message : null) || "Failed to send email."; setError(message); toastManager.add({ title: message, variant: "error" }); }
+		} catch (err: unknown) { const message = (err instanceof Error ? err.message : null) || "Failed to send email."; setError(message); toastManager.add({ title: message, type: "error" }); }
 		finally { setIsSending(false); }
 	};
 

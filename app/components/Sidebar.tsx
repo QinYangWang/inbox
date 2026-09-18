@@ -2,7 +2,6 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Dialog, Input, Tooltip } from "@cloudflare/kumo";
 import {
 	ArchiveIcon,
 	CaretLeftIcon,
@@ -17,6 +16,20 @@ import {
 import { useMemo, useState } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import {
+	Dialog,
+	DialogClose,
+	DialogFooter,
+	DialogHeader,
+	DialogPanel,
+	DialogPopup,
+	DialogTitle,
+} from "~/components/ui/dialog";
+import { Field, FieldLabel } from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
@@ -59,8 +72,8 @@ function FolderLink({
 			className={({ isActive }) =>
 				`flex items-center gap-3 py-2 px-3 rounded-md text-sm transition-colors ${
 					isActive
-						? "bg-kumo-fill font-semibold text-kumo-default"
-						: "text-kumo-strong hover:bg-kumo-tint"
+						? "bg-muted font-semibold text-foreground"
+						: "text-foreground/70 hover:bg-accent"
 				}`
 			}
 		>
@@ -121,7 +134,7 @@ export default function Sidebar() {
 	};
 
 	return (
-		<aside className="h-full w-64 bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
+		<aside className="h-full w-64 bg-muted flex flex-col shrink-0 border-r border-border">
 			{/* Back + identity */}
 			<div className="px-4 pt-4 pb-1">
 				<button
@@ -130,16 +143,16 @@ export default function Sidebar() {
 						navigate("/");
 						closeSidebar();
 					}}
-					className="flex items-center gap-1.5 text-kumo-subtle text-sm hover:text-kumo-default transition-colors mb-2.5 cursor-pointer bg-transparent border-0 p-0"
+					className="flex items-center gap-1.5 text-muted-foreground text-sm hover:text-foreground transition-colors mb-2.5 cursor-pointer bg-transparent border-0 p-0"
 				>
 					<CaretLeftIcon size={14} />
 					<span>Mailboxes</span>
 				</button>
 				<div className="px-1">
-					<div className="text-base font-semibold text-kumo-default truncate">
+					<div className="text-base font-semibold text-foreground truncate">
 						{displayName}
 					</div>
-					<div className="text-sm text-kumo-subtle truncate mt-0.5">
+					<div className="text-sm text-muted-foreground truncate mt-0.5">
 						{currentMailbox?.email || mailboxId}
 					</div>
 				</div>
@@ -148,11 +161,10 @@ export default function Sidebar() {
 			{/* Compose */}
 			<div className="px-3 py-3">
 				<Button
-					variant="primary"
-					icon={<PencilSimpleIcon size={16} />}
 					onClick={() => startCompose()}
 					className="w-full"
 				>
+					<PencilSimpleIcon size={16} aria-hidden="true" />
 					Compose
 				</Button>
 			</div>
@@ -174,18 +186,14 @@ export default function Sidebar() {
 				{customFolders.length > 0 && (
 					<div className="pt-5">
 						<div className="flex items-center justify-between px-3 mb-1.5">
-							<span className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle">
+							<span className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
 								Folders
 							</span>
-							<Tooltip content="New folder" asChild>
-								<Button
-									variant="ghost"
-									shape="square"
-									size="sm"
-									icon={<PlusIcon size={16} />}
-									onClick={() => setIsCreateFolderOpen(true)}
-									aria-label="Create new folder"
-								/>
+							<Tooltip>
+								<TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={() => setIsCreateFolderOpen(true)} aria-label="Create new folder" />}>
+									<PlusIcon size={16} aria-hidden="true" />
+								</TooltipTrigger>
+								<TooltipPopup>New folder</TooltipPopup>
 							</Tooltip>
 						</div>
 						{customFolders.map((folder) => (
@@ -205,18 +213,14 @@ export default function Sidebar() {
 				{customFolders.length === 0 && (
 					<div className="pt-5">
 						<div className="flex items-center justify-between px-3 mb-1.5">
-							<span className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle">
+							<span className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
 								Folders
 							</span>
-							<Tooltip content="New folder" asChild>
-								<Button
-									variant="ghost"
-									shape="square"
-									size="sm"
-									icon={<PlusIcon size={16} />}
-									onClick={() => setIsCreateFolderOpen(true)}
-									aria-label="Create new folder"
-								/>
+							<Tooltip>
+								<TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={() => setIsCreateFolderOpen(true)} aria-label="Create new folder" />}>
+									<PlusIcon size={16} aria-hidden="true" />
+								</TooltipTrigger>
+								<TooltipPopup>New folder</TooltipPopup>
 							</Tooltip>
 						</div>
 					</div>
@@ -224,41 +228,38 @@ export default function Sidebar() {
 			</nav>
 
 			{/* Create folder dialog */}
-			<Dialog.Root
+			<Dialog
 				open={isCreateFolderOpen}
 				onOpenChange={setIsCreateFolderOpen}
 			>
-				<Dialog size="sm" className="p-6">
-					<Dialog.Title className="text-base font-semibold mb-4">
-						Create folder
-					</Dialog.Title>
-					<form onSubmit={handleCreateFolder} className="space-y-4">
-						<Input
-							label="Folder name"
-							placeholder="e.g. Projects"
-							value={newFolderName}
-							onChange={(e) => setNewFolderName(e.target.value)}
-							required
-						/>
-						<div className="flex justify-end gap-2">
-							<Dialog.Close
-								render={(props) => (
-									<Button {...props} variant="secondary">
-										Cancel
-									</Button>
-								)}
-							/>
+				<DialogPopup className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Create folder</DialogTitle>
+					</DialogHeader>
+					<form onSubmit={handleCreateFolder} className="contents">
+						<DialogPanel>
+							<Field>
+								<FieldLabel>Folder name</FieldLabel>
+								<Input
+									placeholder="e.g. Projects"
+									value={newFolderName}
+									onChange={(e) => setNewFolderName(e.target.value)}
+									required
+								/>
+							</Field>
+						</DialogPanel>
+						<DialogFooter>
+							<DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
 							<Button
 								type="submit"
-								variant="primary"
 								disabled={!newFolderName.trim()}
 							>
 								Create
 							</Button>
-						</div>
+						</DialogFooter>
 					</form>
-				</Dialog>
-			</Dialog.Root>
+				</DialogPopup>
+			</Dialog>
 		</aside>
 	);
 }

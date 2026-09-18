@@ -2,10 +2,15 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Input, Loader, useKumoToastManager } from "@cloudflare/kumo";
 import { RobotIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Field, FieldLabel } from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import { Spinner } from "~/components/ui/spinner";
+import { toastManager } from "~/components/ui/toast";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
 
 // Placeholder shown in the textarea when no custom prompt is set.
@@ -14,7 +19,6 @@ const PROMPT_PLACEHOLDER = `You are an email assistant that helps manage this in
 
 export default function SettingsRoute() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
-	const toastManager = useKumoToastManager();
 	const { data: mailbox } = useMailbox(mailboxId);
 	const updateMailboxMutation = useUpdateMailbox();
 
@@ -43,7 +47,7 @@ export default function SettingsRoute() {
 		} catch {
 			toastManager.add({
 				title: "Failed to save settings",
-				variant: "error",
+				type: "error",
 			});
 		} finally {
 			setIsSaving(false);
@@ -57,7 +61,7 @@ export default function SettingsRoute() {
 	if (!mailbox) {
 		return (
 			<div className="flex justify-center py-20">
-				<Loader size="lg" />
+				<Spinner className="size-6" />
 			</div>
 		);
 	}
@@ -66,34 +70,39 @@ export default function SettingsRoute() {
 
 	return (
 		<div className="max-w-2xl px-4 py-4 md:px-8 md:py-6 h-full overflow-y-auto">
-			<h1 className="text-lg font-semibold text-kumo-default mb-6">Settings</h1>
+			<h1 className="text-lg font-semibold text-foreground mb-6">Settings</h1>
 
-			<div className="space-y-6">
+			<div className="flex flex-col gap-6">
 				{/* Account */}
-				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
-					<div className="text-sm font-medium text-kumo-default mb-4">
+				<div className="rounded-lg border border-border bg-card p-5">
+					<div className="text-sm font-medium text-foreground mb-4">
 						Account
 					</div>
-					<div className="space-y-3">
-						<Input
-							label="Display Name"
-							value={displayName}
-							onChange={(e) => setDisplayName(e.target.value)}
-						/>
-						<Input label="Email" type="email" value={mailbox.email} disabled />
+					<div className="flex flex-col gap-3">
+						<Field>
+							<FieldLabel>Display Name</FieldLabel>
+							<Input
+								value={displayName}
+								onChange={(e) => setDisplayName(e.target.value)}
+							/>
+						</Field>
+						<Field>
+							<FieldLabel>Email</FieldLabel>
+							<Input type="email" value={mailbox.email} disabled />
+						</Field>
 					</div>
 				</div>
 
 				{/* Agent System Prompt */}
-				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+				<div className="rounded-lg border border-border bg-card p-5">
 					<div className="flex items-center justify-between mb-4">
 						<div className="flex items-center gap-2">
-							<RobotIcon size={16} weight="duotone" className="text-kumo-subtle" />
-							<span className="text-sm font-medium text-kumo-default">
+							<RobotIcon size={16} weight="duotone" className="text-muted-foreground" />
+							<span className="text-sm font-medium text-foreground">
 								AI Agent Prompt
 							</span>
 							{isCustomPrompt ? (
-								<Badge variant="primary">Custom</Badge>
+								<Badge>Custom</Badge>
 							) : (
 								<Badge variant="secondary">Default</Badge>
 							)}
@@ -102,14 +111,14 @@ export default function SettingsRoute() {
 							<Button
 								variant="ghost"
 								size="xs"
-								icon={<ArrowCounterClockwiseIcon size={14} />}
 								onClick={handleResetPrompt}
 							>
+								<ArrowCounterClockwiseIcon size={14} aria-hidden="true" />
 								Reset to default
 							</Button>
 						)}
 					</div>
-					<p className="text-xs text-kumo-subtle mb-3">
+					<p className="text-xs text-muted-foreground mb-3">
 						Customize how the AI agent behaves for this mailbox.
 						Leave empty to use the built-in default prompt.
 					</p>
@@ -118,9 +127,9 @@ export default function SettingsRoute() {
 						onChange={(e) => setAgentPrompt(e.target.value)}
 						placeholder={PROMPT_PLACEHOLDER}
 						rows={12}
-						className="w-full resize-y rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-xs text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring font-mono leading-relaxed"
+						className="w-full resize-y rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono leading-relaxed"
 					/>
-					<p className="text-xs text-kumo-subtle mt-2">
+					<p className="text-xs text-muted-foreground mt-2">
 						The prompt is sent as the system message to the AI model.
 						It controls the agent's personality, writing style, and behavior rules.
 					</p>
@@ -128,7 +137,7 @@ export default function SettingsRoute() {
 
 				{/* Save */}
 				<div className="flex justify-end">
-					<Button variant="primary" onClick={handleSave} loading={isSaving}>
+					<Button onClick={handleSave} loading={isSaving}>
 						Save Changes
 					</Button>
 				</div>

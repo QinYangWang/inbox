@@ -2,7 +2,6 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Button, Tooltip } from "@cloudflare/kumo";
 import {
 	CheckIcon,
 	CopyIcon,
@@ -11,6 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useParams } from "react-router";
+import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
 function CopyButton({ text }: { text: string }) {
 	const [copied, setCopied] = useState(false);
@@ -26,21 +27,15 @@ function CopyButton({ text }: { text: string }) {
 	};
 
 	return (
-		<Tooltip content={copied ? "Copied!" : "Copy"} asChild>
-			<Button
-				variant="ghost"
-				shape="square"
-				size="sm"
-				icon={
-					copied ? (
-						<CheckIcon size={12} weight="bold" className="text-kumo-success" />
-					) : (
-						<CopyIcon size={12} />
-					)
-				}
-				onClick={handleCopy}
-				aria-label="Copy to clipboard"
-			/>
+		<Tooltip>
+			<TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={handleCopy} aria-label="Copy to clipboard" />}>
+				{copied ? (
+					<CheckIcon size={12} weight="bold" className="text-success" />
+				) : (
+					<CopyIcon size={12} />
+				)}
+			</TooltipTrigger>
+			<TooltipPopup>{copied ? "Copied!" : "Copy"}</TooltipPopup>
 		</Tooltip>
 	);
 }
@@ -71,23 +66,23 @@ export default function MCPPanel() {
 				{/* Intro */}
 				<div className="space-y-2">
 					<div className="flex items-center gap-2">
-						<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-kumo-brand/10">
+						<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
 							<PlugsIcon
 								size={20}
 								weight="duotone"
-								className="text-kumo-brand"
+								className="text-primary"
 							/>
 						</div>
 						<div>
-							<h3 className="text-sm font-semibold text-kumo-default">
+							<h3 className="text-sm font-semibold text-foreground">
 								Connect via MCP
 							</h3>
-							<p className="text-xs text-kumo-subtle">
+							<p className="text-xs text-muted-foreground">
 								Model Context Protocol
 							</p>
 						</div>
 					</div>
-					<p className="text-xs text-kumo-subtle leading-relaxed">
+					<p className="text-xs text-muted-foreground leading-relaxed">
 						This email agent exposes an MCP server so AI coding
 						assistants can manage your inbox directly — read emails,
 						search, draft replies, and send messages using natural
@@ -97,14 +92,14 @@ export default function MCPPanel() {
 
 				{/* MCP URL */}
 				<div className="space-y-1.5">
-					<label className="text-xs font-medium text-kumo-strong block">
+					<label className="text-xs font-medium text-foreground/70 block">
 						Server URL
 					</label>
 					<div className="relative group">
 						<div className="absolute right-1.5 top-1/2 -translate-y-1/2">
 							<CopyButton text={mcpUrl} />
 						</div>
-						<div className="bg-kumo-recessed text-kumo-default font-mono text-[11px] px-3 py-2.5 pr-10 rounded-lg border border-kumo-line break-all leading-relaxed">
+						<div className="bg-muted text-foreground font-mono text-[11px] px-3 py-2.5 pr-10 rounded-lg border border-border break-all leading-relaxed">
 							{mcpUrl}
 						</div>
 					</div>
@@ -112,10 +107,10 @@ export default function MCPPanel() {
 
 				{/* Available tools */}
 				<div className="space-y-2">
-					<h4 className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle px-0.5">
+					<h4 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground px-0.5">
 						Available Tools
 					</h4>
-					<div className="border border-kumo-line rounded-lg divide-y divide-kumo-line">
+					<div className="border border-border rounded-lg divide-y divide-border">
 						{TOOLS.map((tool) => (
 							<div
 								key={tool.name}
@@ -124,14 +119,14 @@ export default function MCPPanel() {
 								<WrenchIcon
 									size={12}
 									weight="bold"
-									className="text-kumo-brand shrink-0"
+									className="text-primary shrink-0"
 								/>
 								<div className="min-w-0 flex-1">
-									<span className="text-xs font-mono font-medium text-kumo-default">
+									<span className="text-xs font-mono font-medium text-foreground">
 										{tool.name}
 									</span>
 								</div>
-								<span className="text-[11px] text-kumo-subtle shrink-0">
+								<span className="text-[11px] text-muted-foreground shrink-0">
 									{tool.desc}
 								</span>
 							</div>
