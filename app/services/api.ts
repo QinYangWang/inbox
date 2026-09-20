@@ -92,6 +92,15 @@ interface EmailListResponse {
 	totalCount: number;
 }
 
+export interface CloudflareIntegration {
+	id: string;
+	accountId: string;
+	accountName: string;
+	scriptName: string;
+	domains: string[];
+	createdAt: string;
+}
+
 // ---------- API client ----------
 
 const api = {
@@ -112,6 +121,11 @@ const api = {
 	getDomainEncryptionKey: () => get<{ publicKey: string; keyId: string }>("/api/v1/domains/encryption-key"),
 	getEncryptionStatus: () => get<{ active: "v1" | "v2"; target: "v1" | "v2"; available: { v1: boolean; v2: boolean }; canMigrate: boolean }>("/api/v1/domains/encryption/status"),
 	migrateEncryptionMaster: () => post<{ active: "v1" | "v2"; target: "v1" | "v2"; available: { v1: boolean; v2: boolean }; canMigrate: boolean }>("/api/v1/domains/encryption/migrate"),
+
+	// Cloudflare account integrations
+	listCloudflareIntegrations: () => get<CloudflareIntegration[]>("/api/v1/integrations/cloudflare"),
+	connectCloudflare: (domains: string[]) => post<{ authorizationUrl: string }>("/api/v1/integrations/cloudflare/connect", { domains }),
+	disconnectCloudflare: (id: string) => post<{ authorizationUrl: string }>(`/api/v1/integrations/cloudflare/${encodeURIComponent(id)}/disconnect`),
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),

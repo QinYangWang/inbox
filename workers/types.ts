@@ -11,4 +11,7 @@ export interface Env extends Cloudflare.Env {
 	/** Random high-entropy secrets used to encrypt server-generated private keys. */
 	DOMAIN_ENCRYPTION_MASTER_V1?: string;
 	DOMAIN_ENCRYPTION_MASTER_V2?: string;
+	CLOUDFLARE_OAUTH_CLIENT_ID?: string;
+	CLOUDFLARE_OAUTH_CLIENT_SECRET?: string;
+	CLOUDFLARE_OAUTH_REDIRECT_URI?: string;
 }

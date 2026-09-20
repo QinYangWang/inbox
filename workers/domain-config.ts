@@ -23,6 +23,39 @@ export interface DomainConfig extends Omit<StoredDomainConfig, "resendApiKeyEncr
 	hasResendApiKey: boolean;
 }
 
+export interface EmailRelayConfig {
+	id: string;
+	publicKey: string;
+	domains: string[];
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface CloudflareRouteSnapshot {
+	domain: string;
+	zoneId: string;
+	catchAll: { name?: string; enabled: boolean; actions: Array<{ type: string; value: string[] }> } | null;
+}
+
+export interface CloudflareIntegration {
+	id: string;
+	accountId: string;
+	accountName: string;
+	scriptName: string;
+	domains: string[];
+	routeSnapshots: CloudflareRouteSnapshot[];
+	createdAt: string;
+}
+
+export interface CloudflareOAuthState {
+	state: string;
+	codeVerifier: string;
+	operation: "connect" | "disconnect";
+	domains: string[];
+	integrationId: string | null;
+	expiresAt: number;
+}
+
 interface SecretEnvelopeV1 {
 	version: 1;
 	keyId: string;
@@ -85,6 +118,97 @@ export class DomainConfigDO extends DurableObject<Env> {
 			master_version TEXT NOT NULL CHECK (master_version IN ('v1', 'v2')),
 			updated_at TEXT NOT NULL
 		)`);
+		this.ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS relay_nonces (
+			relay_id TEXT NOT NULL,
+			nonce TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			PRIMARY KEY (relay_id, nonce)
+		)`);
+		this.ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS relay_nonces_expires_at ON relay_nonces (expires_at)");
+		this.ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS email_relays (
+			id TEXT PRIMARY KEY,
+			public_key TEXT NOT NULL,
+			domains TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`);
+		this.ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS cloudflare_integrations (
+			id TEXT PRIMARY KEY, account_id TEXT NOT NULL, account_name TEXT NOT NULL,
+			script_name TEXT NOT NULL, domains TEXT NOT NULL, route_snapshots TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`);
+		this.ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS cloudflare_oauth_states (
+			state TEXT PRIMARY KEY, code_verifier TEXT NOT NULL, operation TEXT NOT NULL,
+			domains TEXT NOT NULL, integration_id TEXT, expires_at INTEGER NOT NULL
+		)`);
+	}
+
+	getEmailRelay(id: string): EmailRelayConfig | null {
+		const row = [...this.ctx.storage.sql.exec("SELECT * FROM email_relays WHERE id = ?", id)][0];
+		return row ? { id: row.id as string, publicKey: row.public_key as string, domains: JSON.parse(row.domains as string), createdAt: row.created_at as string, updatedAt: row.updated_at as string } : null;
+	}
+
+	listEmailRelays(): EmailRelayConfig[] {
+		return [...this.ctx.storage.sql.exec("SELECT * FROM email_relays ORDER BY id")].map((row) => ({ id: row.id as string, publicKey: row.public_key as string, domains: JSON.parse(row.domains as string), createdAt: row.created_at as string, updatedAt: row.updated_at as string }));
+	}
+
+	upsertEmailRelay(id: string, publicKey: string, domains: string[]): EmailRelayConfig {
+		const now = new Date().toISOString();
+		this.ctx.storage.sql.exec(`INSERT INTO email_relays (id, public_key, domains, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET public_key = excluded.public_key, domains = excluded.domains, updated_at = excluded.updated_at`, id, publicKey, JSON.stringify(domains), now, now);
+		return this.getEmailRelay(id)!;
+	}
+
+	deleteEmailRelay(id: string): boolean {
+		if (!this.getEmailRelay(id)) return false;
+		this.ctx.storage.sql.exec("DELETE FROM relay_nonces WHERE relay_id = ?", id);
+		this.ctx.storage.sql.exec("DELETE FROM email_relays WHERE id = ?", id);
+		return true;
+	}
+
+	listCloudflareIntegrations(): CloudflareIntegration[] {
+		return [...this.ctx.storage.sql.exec("SELECT * FROM cloudflare_integrations ORDER BY created_at")].map((row) => ({ id: row.id as string, accountId: row.account_id as string, accountName: row.account_name as string, scriptName: row.script_name as string, domains: JSON.parse(row.domains as string), routeSnapshots: JSON.parse(row.route_snapshots as string), createdAt: row.created_at as string }));
+	}
+	getCloudflareIntegration(id: string): CloudflareIntegration | null { return this.listCloudflareIntegrations().find((item) => item.id === id) ?? null; }
+	upsertCloudflareIntegration(value: Omit<CloudflareIntegration, "createdAt">): CloudflareIntegration {
+		const now = new Date().toISOString();
+		this.ctx.storage.sql.exec(`INSERT INTO cloudflare_integrations (id, account_id, account_name, script_name, domains, route_snapshots, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id, account_name=excluded.account_name, script_name=excluded.script_name, domains=excluded.domains, route_snapshots=excluded.route_snapshots`, value.id, value.accountId, value.accountName, value.scriptName, JSON.stringify(value.domains), JSON.stringify(value.routeSnapshots), now);
+		return this.getCloudflareIntegration(value.id)!;
+	}
+	deleteCloudflareIntegration(id: string): void { this.ctx.storage.sql.exec("DELETE FROM cloudflare_integrations WHERE id = ?", id); this.deleteEmailRelay(id); }
+	createCloudflareOAuthState(value: CloudflareOAuthState): void { this.ctx.storage.sql.exec("DELETE FROM cloudflare_oauth_states WHERE expires_at <= ?", Math.floor(Date.now() / 1000)); this.ctx.storage.sql.exec("INSERT INTO cloudflare_oauth_states (state, code_verifier, operation, domains, integration_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)", value.state, value.codeVerifier, value.operation, JSON.stringify(value.domains), value.integrationId, value.expiresAt); }
+	consumeCloudflareOAuthState(state: string): CloudflareOAuthState | null {
+		const row = [...this.ctx.storage.sql.exec("SELECT * FROM cloudflare_oauth_states WHERE state = ?", state)][0];
+		this.ctx.storage.sql.exec("DELETE FROM cloudflare_oauth_states WHERE state = ?", state);
+		if (!row || Number(row.expires_at) <= Math.floor(Date.now() / 1000)) return null;
+		return { state: row.state as string, codeVerifier: row.code_verifier as string, operation: row.operation as "connect" | "disconnect", domains: JSON.parse(row.domains as string), integrationId: row.integration_id as string | null, expiresAt: Number(row.expires_at) };
+	}
+
+	claimRelayNonce(relayId: string, nonce: string, expiresAt: number): boolean {
+		const now = Math.floor(Date.now() / 1000);
+		this.ctx.storage.sql.exec("DELETE FROM relay_nonces WHERE expires_at <= ?", now);
+		const exists = [...this.ctx.storage.sql.exec(
+			"SELECT 1 FROM relay_nonces WHERE relay_id = ? AND nonce = ? LIMIT 1",
+			relayId,
+			nonce,
+		)].length > 0;
+		if (exists) return false;
+		this.ctx.storage.sql.exec(
+			"INSERT INTO relay_nonces (relay_id, nonce, expires_at) VALUES (?, ?, ?)",
+			relayId,
+			nonce,
+			expiresAt,
+		);
+		return true;
+	}
+
+	releaseRelayNonce(relayId: string, nonce: string): void {
+		this.ctx.storage.sql.exec(
+			"DELETE FROM relay_nonces WHERE relay_id = ? AND nonce = ?",
+			relayId,
+			nonce,
+		);
 	}
 
 	private master(version: MasterVersion): string | undefined {

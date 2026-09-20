@@ -39,6 +39,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
 - **Full email client** — Send and receive emails via Cloudflare Email Routing with a rich text composer, reply/forward threading, folder organization, search, and attachments
 - **Automatic mailbox creation** — The first valid incoming message for a configured domain creates its recipient mailbox automatically
+- **Cross-account routing** — Connect and remove other Cloudflare accounts through OAuth without API tokens or a deployment CLI
 - **Per-mailbox isolation** — Each mailbox runs in its own Durable Object with SQLite storage and R2 for attachments
 - **Built-in AI agent** — Side panel with 9 email tools for reading, searching, drafting, and sending
 - **Auto-draft on new email** — Agent automatically reads inbound emails and generates draft replies, always requiring explicit confirmation before sending
@@ -46,7 +47,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
 ## Stack
 
-- **Frontend:** React 19, React Router v7, Tailwind CSS, Zustand, TipTap, `@cloudflare/kumo`
+- **Frontend:** React 19, React Router v7, Tailwind CSS, Zustand, TipTap, COSS UI
 - **Backend:** Hono, Cloudflare Workers, Durable Objects (SQLite), R2, Email Routing
 - **AI Agent:** Cloudflare Agents SDK (`AIChatAgent`), AI SDK v6, Workers AI (`@cf/moonshotai/kimi-k2.5`), `react-markdown` + `remark-gfm`
 - **Auth:** Cloudflare Access JWT validation (required outside local development)
@@ -75,7 +76,7 @@ openssl rand -base64 32 | npx wrangler secret put DOMAIN_ENCRYPTION_MASTER_V2
 
 Then open **Domains** and click **Migrate to V2**. The button automatically changes to **Migrate to V1** when V2 is active, allowing the two independently generated secret slots to alternate. Migration decrypts and re-encrypts only the server-generated private key, verifies it before committing, and never decrypts stored Resend API keys. Do not delete the previously active secret until migration succeeds.
 
-On every browser app startup, the Worker checks that the active secret exists, decrypts the stored private key, imports it, and verifies it against the public key with an RSA challenge. A persistent warning links to **Domains** if the secret is missing, changed, or invalid.
+On every browser app startup, the Worker checks that the active secret exists, decrypts the stored private key, imports it, and verifies it against the public key with an RSA challenge. If the secret is missing, changed, or invalid, the app opens a dedicated setup page that can generate a secure value and provides deployment instructions.
 
 The private key never leaves the Worker. The browser generates a random per-secret AES-256-GCM data key, authenticates the domain/provider as additional data, and wraps the data key with the server-generated RSA-OAEP/SHA-256 public key. Only the versioned envelope is stored.
 
@@ -87,6 +88,20 @@ npm run deploy:cloudflare   # Resend + Cloudflare Email Service support
 ```
 
 For local development with the remote Cloudflare Email Service binding, use `npm run dev:cloudflare` (Wrangler login is required). After startup, use the **Domains** page to add domains, restrict allowed addresses, and select a sending provider.
+
+### Cross-account Email Routing
+
+Cloudflare Email Routing can only select an Email Worker in the domain's own account. Agentic Inbox uses Cloudflare self-managed OAuth to connect other accounts directly from **Domains → Cloudflare accounts**. After consent, it deploys a small Relay Worker, installs its private Ed25519 key as a secret, configures Email Routing, and immediately revokes the short-lived OAuth token. No API token or CLI is required.
+
+Create a confidential Cloudflare OAuth client using Authorization Code, PKCE S256, and the callback below. Grant Account Read, Workers Scripts Edit, Zone Read, Email Routing Rules Edit, and DNS Edit when Email Routing activation is required.
+
+```text
+https://YOUR_INBOX_HOST/api/v1/integrations/cloudflare/callback
+```
+
+Configure the three `CLOUDFLARE_OAUTH_*` bindings on the central Worker. Removing an integration starts another short OAuth authorization, restores the previous catch-all rules, deletes the Relay Worker, and removes its central public key.
+
+Relay requests use `POST /api/v1/relay/email`, Ed25519 signatures, a five-minute timestamp, per-relay domain restrictions, and Durable Object nonce replay protection. If an upstream Cloudflare Access application protects the hostname, configure a bypass for the ingestion endpoint only; OAuth management and callback routes remain Access-protected. See [Cross-account Email Routing with Cloudflare OAuth](docs/cloudflare-oauth-relay.md) for OAuth client settings, permissions, Access policy requirements, lifecycle details, and troubleshooting.
 
 ## Prerequisites
 

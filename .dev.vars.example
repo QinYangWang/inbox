@@ -6,3 +6,8 @@ TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 # Generate each value with: openssl rand -base64 32
 DOMAIN_ENCRYPTION_MASTER_V1=replace-with-random-base64-secret
 # DOMAIN_ENCRYPTION_MASTER_V2=replace-with-a-different-random-base64-secret
+
+# Cloudflare self-managed OAuth application used for cross-account relay deployment.
+CLOUDFLARE_OAUTH_CLIENT_ID=your-oauth-client-id
+CLOUDFLARE_OAUTH_CLIENT_SECRET=your-oauth-client-secret
+CLOUDFLARE_OAUTH_REDIRECT_URI=http://localhost:5173/api/v1/integrations/cloudflare/callback

@@ -45,6 +45,11 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Cloudflare Access JWT validation middleware (production only)
 app.use("*", async (c, next) => {
+	// The cross-account email relay uses an Ed25519 signature and cannot
+	// present an interactive Cloudflare Access JWT.
+	if (c.req.method === "POST" && c.req.path === "/api/v1/relay/email") {
+		return next();
+	}
 	// Skip validation in development
 	if (import.meta.env.DEV) {
 		return next();
@@ -112,7 +117,7 @@ app.all("*", (c) => {
 export default {
 	fetch: app.fetch,
 	async email(
-		event: { raw: ReadableStream; rawSize: number },
+		event: { raw: ReadableStream; rawSize: number; from?: string; to?: string },
 		env: Env,
 		ctx: ExecutionContext,
 	) {

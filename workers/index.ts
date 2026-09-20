@@ -25,6 +25,13 @@ import {
 	getOutboundConfig,
 	publicDomainConfig,
 } from "./domain-config";
+import {
+	authenticateRelayRequest,
+	RELAY_HEADERS,
+	RELAY_MAX_CLOCK_SKEW_SECONDS,
+	RELAY_MAX_EMAIL_SIZE,
+} from "./relay-auth";
+import { completeOAuth, createOAuthRequest } from "./cloudflare-integration";
 
 type AppContext = Context<MailboxContext>;
 
@@ -101,6 +108,89 @@ app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
 app.get("/api/v1/encryption/health", async (c) => {
 	return c.json(await getDomainConfigStub(c.env).checkEncryptionHealth());
+});
+
+// -- Cross-account inbound relay -----------------------------------
+
+const CloudflareConnectBody = z.object({ domains: z.array(z.string().min(1)).min(1).max(100) });
+
+app.get("/api/v1/integrations/cloudflare", async (c) => c.json(await getDomainConfigStub(c.env).listCloudflareIntegrations()));
+app.post("/api/v1/integrations/cloudflare/connect", async (c) => {
+	const { domains: rawDomains } = CloudflareConnectBody.parse(await c.req.json());
+	const domains = [...new Set(rawDomains.map((domain) => domain.trim().toLowerCase()))];
+	const stub = getDomainConfigStub(c.env);
+	for (const domain of domains) if (!await stub.get(domain)) return c.json({ error: `Domain ${domain} is not configured` }, 422);
+	const connected = new Set((await stub.listCloudflareIntegrations()).flatMap((item) => item.domains));
+	if (domains.some((domain) => connected.has(domain))) return c.json({ error: "One or more domains are already connected" }, 409);
+	return c.json({ authorizationUrl: await createOAuthRequest(c.env, stub, { operation: "connect", domains }) });
+});
+app.post("/api/v1/integrations/cloudflare/:id/disconnect", async (c) => {
+	const stub = getDomainConfigStub(c.env), id = c.req.param("id");
+	if (!await stub.getCloudflareIntegration(id)) return c.json({ error: "Integration not found" }, 404);
+	return c.json({ authorizationUrl: await createOAuthRequest(c.env, stub, { operation: "disconnect", integrationId: id }) });
+});
+app.get("/api/v1/integrations/cloudflare/callback", async (c) => {
+	const code = c.req.query("code"), state = c.req.query("state"), error = c.req.query("error");
+	const destination = new URL("/integrations/cloudflare", c.req.url);
+	if (!code || !state || error) { destination.searchParams.set("error", error || "OAuth authorization was cancelled"); return c.redirect(destination.toString()); }
+	try { const result = await completeOAuth(c.env, getDomainConfigStub(c.env), code, state); destination.searchParams.set("status", result.operation); }
+	catch (oauthError) { console.error("Cloudflare OAuth integration failed:", oauthError); destination.searchParams.set("error", (oauthError as Error).message); }
+	return c.redirect(destination.toString());
+});
+
+app.post("/api/v1/relay/email", async (c) => {
+	if (c.req.header("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "message/rfc822") {
+		return c.json({ error: "Content-Type must be message/rfc822" }, 415);
+	}
+	if (Object.values(RELAY_HEADERS).some((header) => !c.req.header(header))) {
+		return c.json({ error: "Missing relay authentication headers" }, 400);
+	}
+	const declaredSize = Number(c.req.header("content-length") ?? 0);
+	if (Number.isFinite(declaredSize) && declaredSize > RELAY_MAX_EMAIL_SIZE) {
+		return c.json({ error: "Email exceeds the 25 MiB relay limit" }, 413);
+	}
+	const rawEmail = await c.req.arrayBuffer();
+	if (rawEmail.byteLength === 0) return c.json({ error: "Email body is empty" }, 400);
+	if (rawEmail.byteLength > RELAY_MAX_EMAIL_SIZE) {
+		return c.json({ error: "Email exceeds the 25 MiB relay limit" }, 413);
+	}
+	const relayId = c.req.header(RELAY_HEADERS.id)?.trim() ?? "";
+	const relayConfig = /^[a-zA-Z0-9_-]{1,64}$/.test(relayId)
+		? await getDomainConfigStub(c.env).getEmailRelay(relayId)
+		: null;
+	const authentication = await authenticateRelayRequest(c.req.raw, rawEmail, relayConfig);
+	if (!authentication.ok) return c.json({ error: authentication.error }, authentication.status);
+	const { id, nonce, timestamp, from, to } = authentication.metadata;
+	const domainConfigStub = getDomainConfigStub(c.env);
+	const recipientDomain = to.split("@")[1];
+	const domainConfig = recipientDomain ? await domainConfigStub.get(recipientDomain) : null;
+	if (!domainConfig || domainConfig.inboundProvider !== "cloudflare") {
+		return c.json({ error: "Relay recipient domain is not configured" }, 422);
+	}
+	if (domainConfig.emailAddresses.length > 0 && !domainConfig.emailAddresses.includes(to)) {
+		return c.json({ error: "Relay recipient is not in the domain allowed-address list" }, 422);
+	}
+	const claimed = await domainConfigStub.claimRelayNonce(
+		id,
+		nonce,
+		Number(timestamp) + RELAY_MAX_CLOCK_SKEW_SECONDS,
+	);
+	if (!claimed) return c.json({ error: "Relay request has already been processed" }, 409);
+
+	try {
+		await receiveEmail({
+			raw: new Response(rawEmail).body!,
+			rawSize: rawEmail.byteLength,
+			from,
+			to,
+		}, c.env, c.executionCtx as ExecutionContext);
+		return c.json({ accepted: true }, 202);
+	} catch (error) {
+		// Permit an exact HTTP retry when ingestion fails before a response is
+		// returned. Successfully accepted nonces remain blocked until expiry.
+		await domainConfigStub.releaseRelayNonce(id, nonce);
+		throw error;
+	}
 });
 
 // -- Domains --------------------------------------------------------
@@ -424,6 +514,13 @@ app.get("/api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId"
 
 const MAX_EMAIL_SIZE = 25 * 1024 * 1024;
 
+interface InboundEmailEvent {
+	raw: ReadableStream;
+	rawSize: number;
+	from?: string;
+	to?: string;
+}
+
 async function streamToArrayBuffer(stream: ReadableStream, streamSize: number) {
 	if (streamSize > MAX_EMAIL_SIZE) throw new Error(`Email too large: ${streamSize} bytes exceeds ${MAX_EMAIL_SIZE} byte limit`);
 	if (streamSize <= 0) throw new Error(`Invalid stream size: ${streamSize}`);
@@ -437,20 +534,24 @@ async function streamToArrayBuffer(stream: ReadableStream, streamSize: number) {
 		result.set(value, bytesRead);
 		bytesRead += value.length;
 	}
+	if (bytesRead !== streamSize) throw new Error(`Stream ended at ${bytesRead} bytes; expected ${streamSize}`);
 	return result;
 }
 
-async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env: Env, ctx: ExecutionContext) {
+async function receiveEmail(event: InboundEmailEvent, env: Env, ctx: ExecutionContext) {
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
 	const parsedEmail = await new PostalMime().parse(rawEmail);
 
-	if (!parsedEmail.to?.length || !parsedEmail.to[0].address) throw new Error("received email with empty to");
-
-	const allRecipients = parsedEmail.to.map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
+	const headerRecipients = (parsedEmail.to || []).map((recipient) => recipient.address?.toLowerCase()).filter(Boolean) as string[];
+	const envelopeRecipient = event.to?.trim().toLowerCase();
+	const allRecipients = [...new Set([...(envelopeRecipient ? [envelopeRecipient] : []), ...headerRecipients])];
+	if (allRecipients.length === 0) throw new Error("received email with empty envelope and To header");
 	const ccRecipients = (parsedEmail.cc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 
 	let mailboxId: string | undefined;
+	// Prefer the signed SMTP envelope recipient. This preserves catch-all and
+	// BCC deliveries whose address may not appear in the message To header.
 	for (const recipient of allRecipients) {
 		const domain = recipient.split("@")[1];
 		if (!domain) continue;

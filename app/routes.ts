@@ -12,6 +12,7 @@ export default [
 	index("routes/home.tsx"),
 	route("encryption-setup", "routes/encryption-setup.tsx"),
 	route("domains", "routes/domains.tsx"),
+	route("integrations/cloudflare", "routes/cloudflare-integrations.tsx"),
 	route("domains/:domain", "routes/domain-settings.tsx"),
 	route("mailbox/:mailboxId", "routes/mailbox.tsx", [
 		index("routes/mailbox-index.tsx"),
