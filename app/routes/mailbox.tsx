@@ -43,7 +43,7 @@ export default function MailboxRoute() {
 			{/* Mobile sidebar overlay backdrop */}
 			{isSidebarOpen && (
 				<div
-					className="fixed inset-0 z-30 bg-black/30 md:hidden"
+					className="fixed inset-0 z-[105] bg-black/45 backdrop-blur-[1px] md:hidden"
 					onClick={closeSidebar}
 					onKeyDown={(e) => e.key === "Escape" && closeSidebar()}
 					role="button"
@@ -54,7 +54,7 @@ export default function MailboxRoute() {
 
 			{/* Sidebar: hidden on mobile by default, shown as overlay when open */}
 			<div
-				className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0 md:z-0 ${
+				className={`fixed inset-y-0 left-0 z-[110] w-64 transform bg-sidebar shadow-xl transition-transform duration-200 ease-in-out md:relative md:z-0 md:translate-x-0 md:shadow-none ${
 					isSidebarOpen ? "translate-x-0" : "-translate-x-full"
 				}`}
 			>

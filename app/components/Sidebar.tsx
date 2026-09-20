@@ -134,7 +134,7 @@ export default function Sidebar() {
 	};
 
 	return (
-		<aside className="h-full w-64 bg-muted flex flex-col shrink-0 border-r border-border">
+		<aside className="h-full w-64 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col">
 			{/* Back + identity */}
 			<div className="px-4 pt-4 pb-1">
 				<button
