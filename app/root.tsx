@@ -9,9 +9,11 @@ import {
 	isRouteErrorResponse,
 	Links,
 	Meta,
+	Navigate,
 	Outlet,
 	Scripts,
 	ScrollRestoration,
+	useLocation,
 } from "react-router";
 import { Button } from "~/components/ui/button";
 import {
@@ -100,26 +102,23 @@ export function HydrateFallback() {
 	);
 }
 
-function EncryptionHealthNotice() {
-	const { data, isError } = useQuery({
+function EncryptionHealthGate() {
+	const location = useLocation();
+	const { data, isError, isPending } = useQuery({
 		queryKey: ["encryption-health"],
 		queryFn: api.getEncryptionHealth,
 		staleTime: Infinity,
 		retry: false,
 	});
-	if (!isError && (!data || data.healthy)) return null;
-	const message = data?.message ?? "Unable to verify the active encryption secret. Check the Worker configuration.";
-	return (
-		<div role="alert" className="sticky top-0 z-[100] border-b border-red-300 bg-red-50 px-4 py-3 text-red-950 shadow-md">
-			<div className="mx-auto flex max-w-5xl flex-col items-start gap-3 sm:flex-row sm:items-center">
-				<div className="flex min-w-0 flex-1 items-start gap-3">
-					<WarningIcon size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
-					<div className="min-w-0"><strong>Encryption configuration error</strong><div className="break-words text-sm">{message}</div></div>
-				</div>
-				<Button className="self-end sm:self-auto" variant="secondary" size="sm" onClick={() => { window.location.href = "/domains"; }}>Open Domains</Button>
-			</div>
-		</div>
-	);
+
+	// The setup route owns its loading, failure, and success states so it must
+	// remain reachable even while encryption is unavailable.
+	if (location.pathname === "/encryption-setup") return <Outlet />;
+	if (isPending) return <HydrateFallback />;
+	if (isError || !data?.healthy) {
+		return <Navigate to="/encryption-setup" replace state={{ from: `${location.pathname}${location.search}` }} />;
+	}
+	return <Outlet />;
 }
 
 export default function App() {
@@ -130,8 +129,7 @@ export default function App() {
 		<QueryClientProvider client={queryClient}>
 			<TooltipProvider>
 				<ToastProvider>
-					<EncryptionHealthNotice />
-					<Outlet />
+					<EncryptionHealthGate />
 				</ToastProvider>
 			</TooltipProvider>
 		</QueryClientProvider>

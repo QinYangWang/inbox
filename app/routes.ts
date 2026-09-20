@@ -10,6 +10,7 @@ import {
 
 export default [
 	index("routes/home.tsx"),
+	route("encryption-setup", "routes/encryption-setup.tsx"),
 	route("domains", "routes/domains.tsx"),
 	route("domains/:domain", "routes/domain-settings.tsx"),
 	route("mailbox/:mailboxId", "routes/mailbox.tsx", [
