@@ -124,7 +124,8 @@ const api = {
 
 	// Cloudflare account integrations
 	listCloudflareIntegrations: () => get<CloudflareIntegration[]>("/api/v1/integrations/cloudflare"),
-	connectCloudflare: (domains: string[]) => post<{ authorizationUrl: string }>("/api/v1/integrations/cloudflare/connect", { domains }),
+	connectCloudflare: (domains: string[], options?: { integrationId?: string; returnTo?: "/domains" | "/integrations/cloudflare" }) =>
+		post<{ authorizationUrl: string }>("/api/v1/integrations/cloudflare/connect", { domains, ...options }),
 	disconnectCloudflare: (id: string) => post<{ authorizationUrl: string }>(`/api/v1/integrations/cloudflare/${encodeURIComponent(id)}/disconnect`),
 
 	// Mailboxes

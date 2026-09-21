@@ -12,6 +12,9 @@ const API_URL = "https://api.cloudflare.com/client/v4";
 
 const RELAY_SOURCE = `const d=s=>{const n=s.replace(/-/g,"+").replace(/_/g,"/"),b=atob(n+"=".repeat((4-n.length%4)%4));return Uint8Array.from(b,c=>c.charCodeAt(0)).buffer};const e=b=>{let s="";for(const x of new Uint8Array(b))s+=String.fromCharCode(x);return btoa(s).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")};export default{async email(m,v){if(m.rawSize<=0||m.rawSize>26214400)throw Error("Unsupported email size");const b=await new Response(m.raw).arrayBuffer();if(b.byteLength!==m.rawSize)throw Error("Email size mismatch");const f=m.from.trim().toLowerCase(),t=m.to.trim().toLowerCase(),ts=Math.floor(Date.now()/1000).toString(),n=crypto.randomUUID().replace(/-/g,"");const h=e(await crypto.subtle.digest("SHA-256",b)),p=["v1",v.RELAY_ID,ts,n,f,t,h].join("\\n"),k=await crypto.subtle.importKey("pkcs8",d(v.RELAY_PRIVATE_KEY),"Ed25519",false,["sign"]),s="v1="+e(await crypto.subtle.sign("Ed25519",k,new TextEncoder().encode(p)));const r=await fetch(v.CENTRAL_INGEST_URL,{method:"POST",headers:{"Content-Type":"message/rfc822","X-Agentic-Relay-Id":v.RELAY_ID,"X-Agentic-Relay-Timestamp":ts,"X-Agentic-Relay-Nonce":n,"X-Agentic-Relay-Signature":s,"X-Agentic-Envelope-From":f,"X-Agentic-Envelope-To":t},body:b});if(!r.ok)throw Error("Central ingestion rejected email: "+r.status)}}};`;
 
+const OAUTH_RETURN_TARGETS = ["/domains", "/integrations/cloudflare"];
+const DEFAULT_RETURN_TO = "/integrations/cloudflare";
+
 function b64url(value: ArrayBuffer | Uint8Array): string {
 	const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
 	let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -21,10 +24,11 @@ function requireOAuth(env: Env) {
 	if (!env.CLOUDFLARE_OAUTH_CLIENT_ID || !env.CLOUDFLARE_OAUTH_CLIENT_SECRET || !env.CLOUDFLARE_OAUTH_REDIRECT_URI) throw new Error("Cloudflare OAuth is not configured");
 	return { id: env.CLOUDFLARE_OAUTH_CLIENT_ID, secret: env.CLOUDFLARE_OAUTH_CLIENT_SECRET, redirect: env.CLOUDFLARE_OAUTH_REDIRECT_URI };
 }
-export async function createOAuthRequest(env: Env, stub: DurableObjectStub<DomainConfigDO>, input: { operation: "connect" | "disconnect"; domains?: string[]; integrationId?: string }) {
+export async function createOAuthRequest(env: Env, stub: DurableObjectStub<DomainConfigDO>, input: { operation: "connect" | "disconnect"; domains?: string[]; integrationId?: string; returnTo?: string }) {
 	const oauth = requireOAuth(env), state = b64url(crypto.getRandomValues(new Uint8Array(32))), verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
 	const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-	await stub.createCloudflareOAuthState({ state, codeVerifier: verifier, operation: input.operation, domains: input.domains ?? [], integrationId: input.integrationId ?? null, expiresAt: Math.floor(Date.now() / 1000) + 600 });
+	const returnTo = input.returnTo && OAUTH_RETURN_TARGETS.includes(input.returnTo) ? input.returnTo : DEFAULT_RETURN_TO;
+	await stub.createCloudflareOAuthState({ state, codeVerifier: verifier, operation: input.operation, domains: input.domains ?? [], integrationId: input.integrationId ?? null, returnTo, expiresAt: Math.floor(Date.now() / 1000) + 600 });
 	const url = new URL(AUTHORIZATION_URL); url.search = new URLSearchParams({ client_id: oauth.id, redirect_uri: oauth.redirect, response_type: "code", state, code_challenge: challenge, code_challenge_method: "S256" }).toString();
 	return url.toString();
 }
@@ -60,16 +64,47 @@ async function restoreRoutes(token: string, snapshots: RouteSnapshot[], scriptNa
 		await cf(token, `/zones/${item.zoneId}/email/routing/rules/catch_all`, { method: "PUT", body: JSON.stringify(body) });
 	}
 }
-async function connect(env: Env, stub: DurableObjectStub<DomainConfigDO>, token: string, state: CloudflareOAuthState): Promise<CloudflareIntegration> {
-	for (const domain of state.domains) if (!await stub.get(domain)) throw new Error(`Domain ${domain} is no longer configured`);
-	const existing = await stub.listCloudflareIntegrations();
-	if (state.domains.some((domain) => existing.some((item) => item.domains.includes(domain)))) throw new Error("One or more domains are already connected");
+async function pointZoneAtRelay(token: string, zone: Zone, relayId: string, scriptName: string): Promise<RouteSnapshot> {
+	await cf(token, `/zones/${zone.id}/email/routing/enable`, { method: "POST", body: "{}" }).catch(() => undefined);
+	const old = await cf<RouteSnapshot["catchAll"]>(token, `/zones/${zone.id}/email/routing/rules/catch_all`).catch(() => null);
+	const snapshot = { domain: zone.name, zoneId: zone.id, catchAll: old };
+	await cf(token, `/zones/${zone.id}/email/routing/rules/catch_all`, { method: "PUT", body: JSON.stringify({ name: `Agentic Inbox relay (${relayId})`, enabled: true, actions: [{ type: "worker", value: [scriptName] }] }) });
+	return snapshot;
+}
+async function resolveZones(token: string, domains: string[]): Promise<Zone[]> {
 	const zones: Zone[] = [];
-	for (const domain of state.domains) {
+	for (const domain of domains) {
 		const found = await cf<Zone[]>(token, `/zones?name=${encodeURIComponent(domain)}`);
 		if (found.length !== 1) throw new Error(`Could not uniquely resolve Cloudflare zone ${domain}`);
 		zones.push(found[0]);
 	}
+	return zones;
+}
+// Attach new domains to the relay Worker of an already-connected account.
+// The existing relay, key pair, and script are reused; only the zone catch-all
+// rules, the relay domain allowlist, and the integration record change.
+async function attachToIntegration(stub: DurableObjectStub<DomainConfigDO>, token: string, state: CloudflareOAuthState): Promise<CloudflareIntegration> {
+	const integration = await stub.getCloudflareIntegration(state.integrationId!);
+	if (!integration) throw new Error("Cloudflare integration not found");
+	const relay = await stub.getEmailRelay(integration.id);
+	if (!relay) throw new Error("The relay for this integration is missing; remove it and connect the account again");
+	const zones = await resolveZones(token, state.domains);
+	if (zones.some((zone) => zone.account.id !== integration.accountId)) {
+		throw new Error(`Domain does not belong to the connected account "${integration.accountName}"; connect it as a new account instead`);
+	}
+	const snapshots: RouteSnapshot[] = [];
+	try {
+		for (const zone of zones) snapshots.push(await pointZoneAtRelay(token, zone, integration.id, integration.scriptName));
+	} catch (error) {
+		await restoreRoutes(token, snapshots, integration.scriptName).catch(() => undefined);
+		throw error;
+	}
+	const domains = [...new Set([...integration.domains, ...state.domains])];
+	await stub.upsertEmailRelay(integration.id, relay.publicKey, domains);
+	return await stub.upsertCloudflareIntegration({ ...integration, domains, routeSnapshots: [...integration.routeSnapshots, ...snapshots] });
+}
+async function createIntegration(env: Env, stub: DurableObjectStub<DomainConfigDO>, token: string, state: CloudflareOAuthState): Promise<CloudflareIntegration> {
+	const zones = await resolveZones(token, state.domains);
 	const accountId = zones[0]?.account.id;
 	if (!accountId || zones.some((zone) => zone.account.id !== accountId)) throw new Error("Connect domains from one Cloudflare account at a time");
 	const relayId = `oauth-${crypto.randomUUID()}`, scriptName = `agentic-inbox-${relayId}`;
@@ -78,12 +113,7 @@ async function connect(env: Env, stub: DurableObjectStub<DomainConfigDO>, token:
 	const snapshots: RouteSnapshot[] = [], origin = new URL(requireOAuth(env).redirect).origin;
 	try {
 		await deployWorker(token, accountId, scriptName, relayId, privateKey, `${origin}/api/v1/relay/email`);
-		for (const zone of zones) {
-			await cf(token, `/zones/${zone.id}/email/routing/enable`, { method: "POST", body: "{}" }).catch(() => undefined);
-			const old = await cf<RouteSnapshot["catchAll"]>(token, `/zones/${zone.id}/email/routing/rules/catch_all`).catch(() => null);
-			snapshots.push({ domain: zone.name, zoneId: zone.id, catchAll: old });
-			await cf(token, `/zones/${zone.id}/email/routing/rules/catch_all`, { method: "PUT", body: JSON.stringify({ name: `Agentic Inbox relay (${relayId})`, enabled: true, actions: [{ type: "worker", value: [scriptName] }] }) });
-		}
+		for (const zone of zones) snapshots.push(await pointZoneAtRelay(token, zone, relayId, scriptName));
 		await stub.upsertEmailRelay(relayId, publicKey, state.domains);
 		return await stub.upsertCloudflareIntegration({ id: relayId, accountId, accountName: zones[0].account.name, scriptName, domains: state.domains, routeSnapshots: snapshots });
 	} catch (error) {
@@ -93,17 +123,41 @@ async function connect(env: Env, stub: DurableObjectStub<DomainConfigDO>, token:
 		throw error;
 	}
 }
+async function connect(env: Env, stub: DurableObjectStub<DomainConfigDO>, token: string, state: CloudflareOAuthState): Promise<CloudflareIntegration> {
+	// Domains submitted from the Add domain flow are created here so a single
+	// authorization both deploys routing and submits the new domain. Records
+	// created this way are rolled back if the connection fails.
+	const created: string[] = [];
+	try {
+		for (const domain of state.domains) if (!await stub.get(domain)) { await stub.create(domain); created.push(domain); }
+		const existing = await stub.listCloudflareIntegrations();
+		if (state.domains.some((domain) => existing.some((item) => item.domains.includes(domain)))) throw new Error("One or more domains are already connected");
+		if (state.integrationId) return await attachToIntegration(stub, token, state);
+		return await createIntegration(env, stub, token, state);
+	} catch (error) {
+		for (const domain of created) await stub.delete(domain);
+		throw error;
+	}
+}
 async function disconnect(stub: DurableObjectStub<DomainConfigDO>, token: string, id: string) {
-	const integration = await (stub as unknown as { getCloudflareIntegration(id: string): Promise<CloudflareIntegration | null> }).getCloudflareIntegration(id);
+	const integration = await stub.getCloudflareIntegration(id);
 	if (!integration) throw new Error("Cloudflare integration not found");
 	await restoreRoutes(token, integration.routeSnapshots as RouteSnapshot[], integration.scriptName);
 	try { await cf(token, `/accounts/${integration.accountId}/workers/scripts/${integration.scriptName}`, { method: "DELETE" }); }
 	catch (error) { if (!(error instanceof Error) || !error.message.includes(" 404:")) throw error; }
 	await stub.deleteCloudflareIntegration(id);
 }
-export async function completeOAuth(env: Env, stub: DurableObjectStub<DomainConfigDO>, code: string, stateValue: string) {
+export async function completeOAuth(env: Env, stub: DurableObjectStub<DomainConfigDO>, code: string, stateValue: string): Promise<{ operation: "connected" | "disconnected"; integration?: CloudflareIntegration; returnTo: string }> {
 	const state = await stub.consumeCloudflareOAuthState(stateValue); if (!state) throw new Error("OAuth request is invalid or expired");
+	const returnTo = state.returnTo ?? DEFAULT_RETURN_TO;
 	const token = await exchangeCode(env, code, state.codeVerifier);
-	try { if (state.operation === "connect") return { operation: "connected", integration: await connect(env, stub, token, state) }; await disconnect(stub, token, state.integrationId!); return { operation: "disconnected" }; }
+	try {
+		if (state.operation === "connect") return { operation: "connected", integration: await connect(env, stub, token, state), returnTo };
+		await disconnect(stub, token, state.integrationId!); return { operation: "disconnected", returnTo };
+	} catch (error) {
+		// Carry the originating page so the callback can redirect the error there.
+		(error as { returnTo?: string }).returnTo = returnTo;
+		throw error;
+	}
 	finally { await revoke(env, token); }
 }

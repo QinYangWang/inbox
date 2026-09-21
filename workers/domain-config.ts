@@ -53,6 +53,9 @@ export interface CloudflareOAuthState {
 	operation: "connect" | "disconnect";
 	domains: string[];
 	integrationId: string | null;
+	// Page to return to after the OAuth callback (e.g. the Add domain flow
+	// returns to /domains). Constrained to a server-side allowlist.
+	returnTo: string | null;
 	expiresAt: number;
 }
 
@@ -141,6 +144,8 @@ export class DomainConfigDO extends DurableObject<Env> {
 			state TEXT PRIMARY KEY, code_verifier TEXT NOT NULL, operation TEXT NOT NULL,
 			domains TEXT NOT NULL, integration_id TEXT, expires_at INTEGER NOT NULL
 		)`);
+		// Migration for databases created before return_to existed.
+		try { this.ctx.storage.sql.exec("ALTER TABLE cloudflare_oauth_states ADD COLUMN return_to TEXT"); } catch { /* column already exists */ }
 	}
 
 	getEmailRelay(id: string): EmailRelayConfig | null {
@@ -177,12 +182,12 @@ export class DomainConfigDO extends DurableObject<Env> {
 		return this.getCloudflareIntegration(value.id)!;
 	}
 	deleteCloudflareIntegration(id: string): void { this.ctx.storage.sql.exec("DELETE FROM cloudflare_integrations WHERE id = ?", id); this.deleteEmailRelay(id); }
-	createCloudflareOAuthState(value: CloudflareOAuthState): void { this.ctx.storage.sql.exec("DELETE FROM cloudflare_oauth_states WHERE expires_at <= ?", Math.floor(Date.now() / 1000)); this.ctx.storage.sql.exec("INSERT INTO cloudflare_oauth_states (state, code_verifier, operation, domains, integration_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)", value.state, value.codeVerifier, value.operation, JSON.stringify(value.domains), value.integrationId, value.expiresAt); }
+	createCloudflareOAuthState(value: CloudflareOAuthState): void { this.ctx.storage.sql.exec("DELETE FROM cloudflare_oauth_states WHERE expires_at <= ?", Math.floor(Date.now() / 1000)); this.ctx.storage.sql.exec("INSERT INTO cloudflare_oauth_states (state, code_verifier, operation, domains, integration_id, return_to, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)", value.state, value.codeVerifier, value.operation, JSON.stringify(value.domains), value.integrationId, value.returnTo, value.expiresAt); }
 	consumeCloudflareOAuthState(state: string): CloudflareOAuthState | null {
 		const row = [...this.ctx.storage.sql.exec("SELECT * FROM cloudflare_oauth_states WHERE state = ?", state)][0];
 		this.ctx.storage.sql.exec("DELETE FROM cloudflare_oauth_states WHERE state = ?", state);
 		if (!row || Number(row.expires_at) <= Math.floor(Date.now() / 1000)) return null;
-		return { state: row.state as string, codeVerifier: row.code_verifier as string, operation: row.operation as "connect" | "disconnect", domains: JSON.parse(row.domains as string), integrationId: row.integration_id as string | null, expiresAt: Number(row.expires_at) };
+		return { state: row.state as string, codeVerifier: row.code_verifier as string, operation: row.operation as "connect" | "disconnect", domains: JSON.parse(row.domains as string), integrationId: row.integration_id as string | null, returnTo: (row.return_to as string | null) ?? null, expiresAt: Number(row.expires_at) };
 	}
 
 	claimRelayNonce(relayId: string, nonce: string, expiresAt: number): boolean {

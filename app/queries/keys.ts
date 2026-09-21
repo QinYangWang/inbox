@@ -28,4 +28,7 @@ export const queryKeys = {
 		detail: (domain: string) => ["domains", domain] as const,
 		encryption: ["domains", "encryption"] as const,
 	},
+	cloudflareIntegrations: {
+		all: ["cloudflare-integrations"] as const,
+	},
 };

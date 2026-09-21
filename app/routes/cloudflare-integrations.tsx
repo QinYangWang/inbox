@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
+import { queryKeys } from "~/queries/keys";
 import api from "~/services/api";
 
 export default function CloudflareIntegrationsRoute() {
@@ -17,8 +18,8 @@ export default function CloudflareIntegrationsRoute() {
 	const [selected, setSelected] = useState<string[]>([]);
 	const [working, setWorking] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(params.get("error"));
-	const domainsQuery = useQuery({ queryKey: ["domains"], queryFn: api.listDomains });
-	const integrationsQuery = useQuery({ queryKey: ["cloudflare-integrations"], queryFn: api.listCloudflareIntegrations });
+	const domainsQuery = useQuery({ queryKey: queryKeys.domains.all, queryFn: api.listDomains });
+	const integrationsQuery = useQuery({ queryKey: queryKeys.cloudflareIntegrations.all, queryFn: api.listCloudflareIntegrations });
 	const connectedDomains = useMemo(() => new Set((integrationsQuery.data ?? []).flatMap((item) => item.domains)), [integrationsQuery.data]);
 	const available = (domainsQuery.data ?? []).filter((domain) => !connectedDomains.has(domain.domain));
 

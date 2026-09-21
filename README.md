@@ -91,7 +91,7 @@ For local development with the remote Cloudflare Email Service binding, use `npm
 
 ### Cross-account Email Routing
 
-Cloudflare Email Routing can only select an Email Worker in the domain's own account. Agentic Inbox uses Cloudflare self-managed OAuth to connect other accounts directly from **Domains → Cloudflare accounts**. After consent, it deploys a small Relay Worker, installs its private Ed25519 key as a secret, configures Email Routing, and immediately revokes the short-lived OAuth token. No API token or CLI is required.
+Cloudflare Email Routing can only select an Email Worker in the domain's own account. Agentic Inbox uses Cloudflare self-managed OAuth to connect other accounts directly from **Domains → Add domain**: choose an already-connected account to reuse its relay Worker, or connect a new account to deploy a fresh relay and submit the domain in one flow. After consent, it deploys a small Relay Worker, installs its private Ed25519 key as a secret, configures Email Routing, and immediately revokes the short-lived OAuth token. No API token or CLI is required. Existing connections are managed under **Domains → Cloudflare accounts**.
 
 Create a confidential Cloudflare OAuth client using Authorization Code, PKCE S256, and the callback below. Grant Account Read, Workers Scripts Edit, Zone Read, Email Routing Rules Edit, and DNS Edit when Email Routing activation is required.
 

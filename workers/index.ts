@@ -112,30 +112,62 @@ app.get("/api/v1/encryption/health", async (c) => {
 
 // -- Cross-account inbound relay -----------------------------------
 
-const CloudflareConnectBody = z.object({ domains: z.array(z.string().min(1)).min(1).max(100) });
+const DomainName = z.string().trim().toLowerCase().regex(
+	/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/,
+	"Enter a valid domain name",
+);
+const CloudflareConnectBody = z.object({
+	domains: z.array(DomainName).min(1).max(100),
+	// When set, the domains join an already-connected account instead of
+	// creating a new integration. The account is re-authorized through the
+	// same short-lived OAuth flow.
+	integrationId: z.string().min(1).max(64).optional(),
+	returnTo: z.enum(["/domains", "/integrations/cloudflare"]).optional(),
+});
 
 app.get("/api/v1/integrations/cloudflare", async (c) => c.json(await getDomainConfigStub(c.env).listCloudflareIntegrations()));
 app.post("/api/v1/integrations/cloudflare/connect", async (c) => {
-	const { domains: rawDomains } = CloudflareConnectBody.parse(await c.req.json());
-	const domains = [...new Set(rawDomains.map((domain) => domain.trim().toLowerCase()))];
+	const { domains: rawDomains, integrationId, returnTo } = CloudflareConnectBody.parse(await c.req.json());
+	const domains = [...new Set(rawDomains)];
 	const stub = getDomainConfigStub(c.env);
-	for (const domain of domains) if (!await stub.get(domain)) return c.json({ error: `Domain ${domain} is not configured` }, 422);
+	// Domain records may not exist yet: the Add domain flow submits new
+	// domains here and they are created when the OAuth callback succeeds.
+	if (integrationId && !await stub.getCloudflareIntegration(integrationId)) return c.json({ error: "Integration not found" }, 404);
 	const connected = new Set((await stub.listCloudflareIntegrations()).flatMap((item) => item.domains));
 	if (domains.some((domain) => connected.has(domain))) return c.json({ error: "One or more domains are already connected" }, 409);
-	return c.json({ authorizationUrl: await createOAuthRequest(c.env, stub, { operation: "connect", domains }) });
+	try {
+		return c.json({ authorizationUrl: await createOAuthRequest(c.env, stub, { operation: "connect", domains, integrationId, returnTo }) });
+	} catch (error) {
+		return c.json({ error: (error as Error).message }, 503);
+	}
 });
 app.post("/api/v1/integrations/cloudflare/:id/disconnect", async (c) => {
 	const stub = getDomainConfigStub(c.env), id = c.req.param("id");
 	if (!await stub.getCloudflareIntegration(id)) return c.json({ error: "Integration not found" }, 404);
-	return c.json({ authorizationUrl: await createOAuthRequest(c.env, stub, { operation: "disconnect", integrationId: id }) });
+	try {
+		return c.json({ authorizationUrl: await createOAuthRequest(c.env, stub, { operation: "disconnect", integrationId: id }) });
+	} catch (error) {
+		return c.json({ error: (error as Error).message }, 503);
+	}
 });
 app.get("/api/v1/integrations/cloudflare/callback", async (c) => {
 	const code = c.req.query("code"), state = c.req.query("state"), error = c.req.query("error");
-	const destination = new URL("/integrations/cloudflare", c.req.url);
-	if (!code || !state || error) { destination.searchParams.set("error", error || "OAuth authorization was cancelled"); return c.redirect(destination.toString()); }
-	try { const result = await completeOAuth(c.env, getDomainConfigStub(c.env), code, state); destination.searchParams.set("status", result.operation); }
-	catch (oauthError) { console.error("Cloudflare OAuth integration failed:", oauthError); destination.searchParams.set("error", (oauthError as Error).message); }
-	return c.redirect(destination.toString());
+	if (!code || !state || error) {
+		const destination = new URL("/integrations/cloudflare", c.req.url);
+		destination.searchParams.set("error", error || "OAuth authorization was cancelled");
+		return c.redirect(destination.toString());
+	}
+	try {
+		const result = await completeOAuth(c.env, getDomainConfigStub(c.env), code, state);
+		const destination = new URL(result.returnTo, c.req.url);
+		destination.searchParams.set("status", result.operation);
+		return c.redirect(destination.toString());
+	} catch (oauthError) {
+		console.error("Cloudflare OAuth integration failed:", oauthError);
+		const destination = new URL((oauthError as { returnTo?: string }).returnTo ?? "/integrations/cloudflare", c.req.url);
+		destination.searchParams.set("error", (oauthError as Error).message);
+		return c.redirect(destination.toString());
+	}
 });
 
 app.post("/api/v1/relay/email", async (c) => {
@@ -195,10 +227,6 @@ app.post("/api/v1/relay/email", async (c) => {
 
 // -- Domains --------------------------------------------------------
 
-const DomainName = z.string().trim().toLowerCase().regex(
-	/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/,
-	"Enter a valid domain name",
-);
 const CreateDomainBody = z.object({ domain: DomainName });
 const UpdateDomainBody = z.object({
 	emailAddresses: z.array(z.string().email()).max(1000),
